@@ -1,0 +1,75 @@
+// capri-mod: 1
+// id: yuno-tone-presets
+// name: Tone Presets
+// version: 1.0.0
+// author: YunoTheAlien
+// description: Choose a calm, playful or direct tone for Capri's chat replies from her Mods menu.
+// permissions: personality
+// requires: api 3
+
+using CapriDesktop;
+
+public class YunoTonePresets : ICapriMod
+{
+    private const string StoreKey = "tone";
+    private ICapriHost host;
+    private string activeNote;
+
+    public void Start(ICapriHost capri)
+    {
+        host = capri;
+        Apply(host.Store.Get(StoreKey));
+        host.Ui.AddMenuItem("Tone: Default", delegate { Select(null); });
+        host.Ui.AddMenuItem("Tone: Calm", delegate { Select("calm"); });
+        host.Ui.AddMenuItem("Tone: Playful", delegate { Select("playful"); });
+        host.Ui.AddMenuItem("Tone: Direct", delegate { Select("direct"); });
+    }
+
+    public bool Heard(string words)
+    {
+        return false;
+    }
+
+    public void Stop()
+    {
+        Apply(null);
+        host = null;
+    }
+
+    private void Select(string tone)
+    {
+        if (host == null) return;
+
+        if (tone == null)
+            host.Store.Remove(StoreKey);
+        else
+            host.Store.Set(StoreKey, tone);
+
+        Apply(tone);
+    }
+
+    private void Apply(string tone)
+    {
+        string note = NoteFor(tone);
+        if (note == activeNote) return;
+
+        if (activeNote != null) host.Personality.Remove(activeNote);
+        if (note != null) host.Personality.Add(note);
+        activeNote = note;
+    }
+
+    private static string NoteFor(string tone)
+    {
+        switch (tone)
+        {
+            case "calm":
+                return "When appropriate, use an unhurried, gentle tone and plain wording.";
+            case "playful":
+                return "When appropriate, use light, friendly humor that fits the conversation.";
+            case "direct":
+                return "When appropriate, lead with the answer and keep the wording straightforward.";
+            default:
+                return null;
+        }
+    }
+}
