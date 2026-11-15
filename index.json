@@ -744,6 +744,14 @@
       "kind": "skin",
       "author": "Vocyn",
       "about": "Capri in turn-of-the-millennium chrome: liquid-mirror hair reflecting a sky, horizon and shiny floor that drift as she moves, rainbow holographic foil panels, glossy black limbs, an LCD face and twinkling lens stars."
+    },
+    {
+      "folder": "yuno-tone-presets",
+      "file": "yuno-tone-presets.capri-code",
+      "name": "Tone Presets",
+      "kind": "code",
+      "author": "YunoTheAlien",
+      "about": "Choose a calm, playful or direct tone for Capri's chat replies from her Mods menu."
     }
   ]
 }
