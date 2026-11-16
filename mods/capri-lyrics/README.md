@@ -1,6 +1,8 @@
 # Capri Lyrics
 
-Mod autonome de paroles pour **Capri Desktop 0.8.9** (Mod API 3).
+Paroles Spotify synchronisées pour Capri Desktop 0.8.9 (Mod API 3), sous Windows uniquement.
+
+- Made by: Suoh
 
 ## Aperçu
 
@@ -29,7 +31,8 @@ Défilement fluide, gros plans du visage de Capri avec effets de glitch, fissure
 
 ## Utilisation
 
-- Cliquez sur le bouton **CC** pour afficher les paroles du morceau en cours.
+- Cliquez sur le bouton **CC** ou utilisez le menu **Paroles (CC)** pour afficher ou masquer le bandeau.
+- Le raccourci **Ctrl+Alt+L** est disponible si Capri peut l’enregistrer.
 - Les paroles se synchronisent automatiquement avec la lecture Spotify.
 - La pose de Capri (assis / allongé / aucun) peut être réglée via les commandes du mod ou les paramètres associés.
 
@@ -39,6 +42,8 @@ Défilement fluide, gros plans du visage de Capri avec effets de glitch, fissure
 |--------|------|-----|
 | lrclib.net | Synchronisées + simples | https://lrclib.net |
 | lyrics.ovh | Simples | https://api.lyrics.ovh |
+
+Quand le bandeau est affiché, le titre, l'artiste, l'album et la durée du morceau en cours (dans n'importe quelle appli, pas seulement Spotify) sont envoyés à lrclib.net, et le titre et l'artiste à api.lyrics.ovh.
 
 ## Cache
 
@@ -58,11 +63,13 @@ Les paroles récupérées sont mises en cache localement dans le dossier du mod 
 
 ## Compatibilité
 
-Capri Desktop 0.8.9
+Capri Desktop 0.8.9 sous Windows uniquement.
 
 ## Licence
 
 Mod communautaire. La redistribution est autorisée avec mention de l'auteur d'origine.
+
+Les visages de Capri affichés par le mod viennent de [Capri](https://github.com/lachydotmcg/capri-desktop).
 
 ---
 *README généré pour l'upload du mod `capri-lyrics.capri-code`.*

@@ -3448,6 +3448,7 @@ namespace CapriLyrics
         private System.Windows.Forms.Timer tick;
         private System.Windows.Forms.Timer frame;
         private bool framesRunning;
+        private bool hotkeyRegistered;
         private float frameCost;
         private int frameFaults;
         private CapriTrack liveTrack;
@@ -3496,9 +3497,10 @@ namespace CapriLyrics
                 OnUi(BuildWindows);
                 host.Ui.AddMenuItem("Paroles (CC)", delegate { Toggle(); });
                 host.Ui.SetOptions("Lyrics", Options);
-                try { host.Keys.Hotkey(Hotkey, delegate { Toggle(); }); }
-                catch (ArgumentException) { host.Log("Lyrics: " + Hotkey + " is already taken; use the CC button."); }
-                host.Log("Capri Lyrics " + Version + " started. Toggle with the CC button beside the heart, or " + Hotkey + ".");
+                try { hotkeyRegistered = host.Keys.Hotkey(Hotkey, delegate { Toggle(); }); }
+                catch (ArgumentException) { hotkeyRegistered = false; }
+                string shortcutStatus = hotkeyRegistered ? " You can also use " + Hotkey + "." : " " + Hotkey + " is unavailable.";
+                host.Log("Capri Lyrics " + Version + " started. Toggle with the CC button beside the heart or the Paroles (CC) menu item." + shortcutStatus);
                 bool restore = host.Store.Flag("lyrics.on", false);
                 if (restore) OnUi(delegate { TurnOn(true); });
             }
@@ -3529,8 +3531,12 @@ namespace CapriLyrics
             catch (Exception) { }
             try { if (updatedHandler != null) capri.Music.Updated -= updatedHandler; }
             catch (Exception) { }
-            try { capri.Keys.Remove(Hotkey); }
-            catch (Exception) { }
+            if (hotkeyRegistered)
+            {
+                try { capri.Keys.Remove(Hotkey); }
+                catch (Exception) { }
+                hotkeyRegistered = false;
+            }
             try { if (cache != null) cache.Save(); }
             catch (Exception) { }
             OnUi(delegate
@@ -3878,10 +3884,12 @@ namespace CapriLyrics
             try
             {
                 string json = Get(LyricsSource.LrclibGetUrl(artist, title, album, length));
+                if (json == null) return null;
                 Lyrics found = LyricsSource.FromLrclib(json, key, length);
                 if (found != null && !found.Empty) return found;
                 if (found != null && found.Instrumental) return found;
                 json = Get(LyricsSource.LrclibSearchUrl(artist, title));
+                if (json == null) return null;
                 found = LyricsSource.FromSearch(json, key, length);
                 if (found != null && !found.Empty) return found;
                 json = Get(LyricsSource.OvhUrl(artist, title));
@@ -3910,7 +3918,14 @@ namespace CapriLyrics
                 using (StreamReader reader = new StreamReader(stream, Encoding.UTF8))
                     return reader.ReadToEnd();
             }
-            catch (WebException) { return null; }
+            catch (WebException error)
+            {
+                using (HttpWebResponse failed = error.Response as HttpWebResponse)
+                {
+                    if (failed != null && failed.StatusCode == HttpStatusCode.NotFound) return "";
+                }
+                return null;
+            }
             catch (IOException) { return null; }
             catch (NotSupportedException) { return null; }
             catch (InvalidOperationException) { return null; }

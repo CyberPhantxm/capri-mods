@@ -75,5 +75,5 @@ Nothing else is left behind: no other files, no settings in Capri, and nothing i
 ## Credits
 
 - Lyrics from [LRCLIB](https://lrclib.net).
-- Uses Capri's own font, colours and player style at runtime. Nothing of Capri's is copied into this file.
+- Uses Capri's own font, colours and player style at runtime. Some drawing code (her glitch, plate and bubble window) is adapted from [Capri](https://github.com/lachydotmcg/capri-desktop).
 - Capri+ is a fan-made, unofficial project.
