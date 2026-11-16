@@ -82,12 +82,36 @@
       "about": "A Windows code mod that lets you close Capri's Mainframe to the system tray."
     },
     {
+      "folder": "capri-discord-status",
+      "file": "capri-discord-status.capri-code",
+      "name": "Capri Discord Status",
+      "kind": "code",
+      "author": "tob7as",
+      "about": "Tell Capri what your Discord status should say. It shows on her Discord status (\"Playing Capri\") for 5 hours, then goes back to her normal one by itself. It never puts anything inappropriate or offensive on it."
+    },
+    {
+      "folder": "capri-lyrics",
+      "file": "capri-lyrics.capri-code",
+      "name": "Capri Lyrics",
+      "kind": "code",
+      "author": "Suoh",
+      "about": "Paroles Spotify synchronisées pour Capri Desktop 0.8.9 (Mod API 3), sous Windows uniquement."
+    },
+    {
       "folder": "capri-night-city",
       "file": "capri-night-city.capri-code",
       "name": "Capri Night City",
       "kind": "code",
       "author": "NoxEterna",
       "about": "Connect Capri to Cyberpunk 2077 for nearby/group hacks, native scanner tags, vehicles and devices, eight custom netrunner programs, Protect Me, stealth and optional chaos."
+    },
+    {
+      "folder": "capriplus-lyrics",
+      "file": "capriplus-lyrics.capri-code",
+      "name": "Capri+ Lyrics",
+      "kind": "code",
+      "author": "i3box",
+      "about": "Synced lyrics slide out of Capri's music player as a drawer in her style, line by line in time with the song, and react to the music."
     },
     {
       "folder": "cat-ears",

@@ -3,6 +3,7 @@
 Synced lyrics slide out of Capri's music player as a drawer in her style, line by line in time with the song, and react to the music.
 
 - Kind: code mod
+- Made by: i3box
 - Needs: Capri 0.8.9 or newer, on Windows
 
 An unofficial community mod. It isn't made by or affiliated with Capri's developer, CD PROJEKT RED or Studio Trigger.
