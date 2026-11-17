@@ -218,6 +218,14 @@
       "about": "Бросает кубы d4, d6, d10, d12 и подбрасывает монетку по команде."
     },
     {
+      "folder": "duo-commentary",
+      "file": "duo-commentary.capri-code",
+      "name": "Duo Commentary",
+      "kind": "code",
+      "author": "flaqueeee",
+      "about": "Switch between roast and serious style and get random canned one-liners from Capri on request. It does not look at your screen."
+    },
+    {
       "folder": "ember",
       "file": "ember.capri-skin",
       "name": "Ember",
@@ -256,6 +264,14 @@
       "kind": "code",
       "author": "cyz7z",
       "about": "She glides to her new spot instead of teleporting, with a smooth ease and a little bob."
+    },
+    {
+      "folder": "focus-guard",
+      "file": "focus-guard.capri-code",
+      "name": "Focus Guard",
+      "kind": "code",
+      "author": "flaqueeee",
+      "about": "Timed focus sessions that count how often you mention YouTube, Reddit and other distracting sites. Capri tells you when the session ends."
     },
     {
       "folder": "focus-mode",
@@ -304,6 +320,14 @@
       "kind": "skin",
       "author": "Issei",
       "about": "Her hair as a galaxy: deep space with violet and pink clouds."
+    },
+    {
+      "folder": "gaming-coach",
+      "file": "gaming-coach.capri-code",
+      "name": "Gaming Coach",
+      "kind": "code",
+      "author": "flaqueeee",
+      "about": "Times your gaming sessions, records wins and losses, and tracks streaks, win rate and tilt. It only works from what you tell it."
     },
     {
       "folder": "hair-down",
@@ -658,6 +682,22 @@
       "about": "A sharp crimson Santa hat for her, in every pose."
     },
     {
+      "folder": "screen-context-memory",
+      "file": "screen-context-memory.capri-code",
+      "name": "Work Context Memory",
+      "kind": "code",
+      "author": "flaqueeee",
+      "about": "Saves named work contexts and tracks the time you spend on each project between sessions, so you can recall what you were last working on."
+    },
+    {
+      "folder": "shadow-clone",
+      "file": "shadow-clone.capri-code",
+      "name": "Shadow Clone",
+      "kind": "code",
+      "author": "flaqueeee",
+      "about": "A small debug notebook. Save notes and bugs by typing them, compare notes, and get a generic tip. It does not see your screen."
+    },
+    {
       "folder": "sharper-ears",
       "file": "sharper-ears.capri-mod",
       "name": "Sharper Ears",
@@ -672,6 +712,14 @@
       "kind": "code",
       "author": "Issei",
       "about": "Puts your PC to sleep or shuts it down later, with a warning first."
+    },
+    {
+      "folder": "smart-reminders",
+      "file": "smart-reminders.capri-code",
+      "name": "Smart Reminders Plus",
+      "kind": "code",
+      "author": "flaqueeee",
+      "about": "Context reminders: say \"remind me when I'm back on X to do Y\" and Capri nudges you the next time you mention X. For timed reminders, just ask Capri."
     },
     {
       "folder": "soundboard",

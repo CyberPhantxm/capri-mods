@@ -1,0 +1,169 @@
+// capri-mod: 1
+// id: duo-commentary
+// name: Duo Commentary
+// version: 1.1.0
+// author: flaqueeee
+// description: Canned commentary lines in roast or serious style. Say "commentary on", "roast mode", "serious mode", "commentary quip", "commentary off".
+
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Text;
+using System.Text.RegularExpressions;
+using CapriDesktop;
+
+public class DuoCommentary : ICapriMod
+{
+    private const RegexOptions Plain = RegexOptions.IgnoreCase | RegexOptions.CultureInvariant;
+    private static readonly Regex Wake = new Regex(@"^\s*(?:(?:hey|hi|ok|okay|yo|oi)[\s,]+)?capri\b[\s,.:;!?-]*|[\s,]+capri[\s.!?]*$", Plain);
+    private static readonly Regex CommentStart = new Regex(@"\bcommentary\s+on\b|\bstart\s+commentary\b", Plain);
+    private static readonly Regex CommentStop = new Regex(@"\bcommentary\s+off\b|\bstop\s+commentary\b", Plain);
+    private static readonly Regex RoastMode = new Regex(@"\broast\s+mode\b", Plain);
+    private static readonly Regex SeriousMode = new Regex(@"\bserious\s+mode\b", Plain);
+    private static readonly Regex CommentHelp = new Regex(@"\bcommentary\s+help\b", Plain);
+    private static readonly Regex Quip = new Regex(@"\bcommentary\s+quip\b", Plain);
+
+    private ICapriHost capri;
+    private string dataFolder;
+    private bool commentaryActive;
+    private bool roastMode;
+    private DateTime lastComment;
+    private int commentCount;
+    private Random random;
+
+    public void Start(ICapriHost host)
+    {
+        capri = host;
+        dataFolder = host.Folder;
+        commentaryActive = false;
+        roastMode = false;
+        random = new Random();
+        capri.Log("Duo Commentary started.");
+    }
+
+    public void Stop()
+    {
+        capri.Log("Duo Commentary stopped.");
+    }
+
+    public bool Heard(string words)
+    {
+        string said = Wake.Replace((words != null ? words : "").Trim(), "").Trim();
+        if (said.Length == 0) return false;
+
+        string reply = Answer(said);
+        if (reply == null) return false;
+        
+        capri.Say(reply);
+        return true;
+    }
+
+    private string Answer(string said)
+    {
+        if (CommentHelp.IsMatch(said))
+            return "Commentary commands: 'commentary on', 'commentary off', 'roast mode', 'serious mode', 'commentary quip' for one random line. I don't look at your screen, these are canned lines.";
+
+        if (CommentStart.IsMatch(said))
+            return StartCommentary();
+
+        if (CommentStop.IsMatch(said))
+            return StopCommentary();
+
+        if (RoastMode.IsMatch(said))
+            return SetRoastMode(true);
+
+        if (SeriousMode.IsMatch(said))
+            return SetRoastMode(false);
+
+        if (Quip.IsMatch(said))
+            return OneComment();
+
+        return null;
+    }
+
+    private string StartCommentary()
+    {
+        if (commentaryActive)
+            return "Commentary is already on. Say 'commentary off' to end it.";
+
+        commentaryActive = true;
+        commentCount = 0;
+        lastComment = DateTime.Now;
+
+        if (roastMode)
+            return "Commentary on, roast edition. Say 'commentary quip' for a line.";
+        else
+            return "Commentary on, serious style. Say 'commentary quip' for a line.";
+    }
+
+    private string StopCommentary()
+    {
+        if (!commentaryActive)
+            return "Commentary wasn't on.";
+
+        commentaryActive = false;
+        return commentCount > 0 
+            ? "Commentary off. That was " + commentCount + " lines." 
+            : "Commentary off.";
+    }
+
+    private string SetRoastMode(bool roast)
+    {
+        roastMode = roast;
+        
+        if (roast)
+            return commentaryActive 
+                ? "Switching to roast mode." 
+                : "Roast mode set. Say 'commentary quip' for a line.";
+        else
+            return commentaryActive 
+                ? "Switching to serious mode." 
+                : "Serious mode set. Say 'commentary quip' for a line.";
+    }
+
+    private string OneComment()
+    {
+        commentCount++;
+        
+        if (roastMode)
+            return GetRoastComment();
+        else
+            return GetSeriousComment();
+    }
+
+    private string GetRoastComment()
+    {
+        string[] roasts = {
+            "Bold of you to call that a plan.",
+            "I've seen worse. Not much worse, but I've seen it.",
+            "You know there's a StackOverflow for this, right? Just checking.",
+            "Another break? Bold strategy.",
+            "That's certainly one way to do it. Not the best way, but one way.",
+            "I'd explain what's wrong here but we don't have that kind of time, choom.",
+            "You're really committed to this approach. Respect. It's wrong, but respect.",
+            "Working hard or hardly working? I'm not your mom, do what you want.",
+            "Sure, keep clicking randomly. That always works.",
+            "Research, obviously. Sure."
+        };
+
+        return roasts[random.Next(roasts.Length)];
+    }
+
+    private string GetSeriousComment()
+    {
+        string[] comments = {
+            "Steady progress is still progress.",
+            "Checking the documentation first is good practice.",
+            "A short break now and then helps focus.",
+            "Small steps, one at a time. Looks productive.",
+            "Either research or distraction, hard to tell.",
+            "Writing mode. I respect it.",
+            "Debugging takes patience. Read the error message twice.",
+            "Good design is mostly iteration.",
+            "Testing is how you find the problems before others do.",
+            "Collaboration or procrastination? You decide."
+        };
+
+        return comments[random.Next(comments.Length)];
+    }
+}

@@ -1,0 +1,346 @@
+// capri-mod: 1
+// id: gaming-coach
+// name: Gaming Coach
+// version: 1.1.0
+// author: flaqueeee
+// description: Times your games and tracks wins, losses, streaks and tilt. Say "start game timer", "game over", "game stats" or "coach tilt check".
+
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text;
+using System.Text.RegularExpressions;
+using CapriDesktop;
+
+public class GamingCoach : ICapriMod
+{
+    private const RegexOptions Plain = RegexOptions.IgnoreCase | RegexOptions.CultureInvariant;
+    private static readonly Regex Wake = new Regex(@"^\s*(?:(?:hey|hi|ok|okay|yo|oi)[\s,]+)?capri\b[\s,.:;!?-]*|[\s,]+capri[\s.!?]*$", Plain);
+    private static readonly Regex StartTimer = new Regex(@"\b(?:start|begin)\s+game\s+timer\b|\bgame\s+timer\s+start\b|\bcoach\s+(?:start|chrono)\b|\bgame\s+chrono\b", Plain);
+    private static readonly Regex EndTimer = new Regex(@"\b(?:end|stop)\s+game\s+timer\b|\bgame\s+(?:done|over|ended)\b", Plain);
+    private static readonly Regex DirectWin = new Regex(@"^(?:game|coach)\s+(?:won|win|victory)\W*$", Plain);
+    private static readonly Regex DirectLoss = new Regex(@"^(?:game|coach)\s+(?:lost|loss|defeat)\W*$", Plain);
+    private static readonly Regex ReplyWin = new Regex(@"^(?:i\s+)?(?:w|win|won)\W*$", Plain);
+    private static readonly Regex ReplyLoss = new Regex(@"^(?:i\s+)?(?:l|loss|lost)\W*$", Plain);
+    private static readonly Regex TiltCheck = new Regex(@"\b(?:coach|game)\s+tilt(?:\s+check)?\b|\bgame\s+tilt\s+check\b|\bcoach\s+am\s+i\s+tilt(?:ed|ing)\b", Plain);
+    private static readonly Regex GameStats = new Regex(@"\bgame\s+stats?\b|\bgaming\s+stats?\b|\bcoach\s+stats?\b", Plain);
+    private static readonly Regex StreakCheck = new Regex(@"\bgame\s+streak\b|\bcoach\s+streak\b", Plain);
+    private static readonly Regex GameHelp = new Regex(@"\bgame\s+help\b|\bcoach\s+help\b", Plain);
+    private static readonly TimeSpan PendingWindow = TimeSpan.FromMinutes(2);
+
+    private ICapriHost capri;
+    private string dataFolder;
+    private string statsFile;
+    private bool timerActive;
+    private DateTime timerStart;
+    private string currentGame;
+    private List<GameSession> sessions;
+    private DateTime lastAdvice;
+    private bool pendingResult;
+    private DateTime pendingSince;
+    private int pendingMinutes;
+
+    private class GameSession
+    {
+        public DateTime When;
+        public int Minutes;
+        public bool Won;
+        public string Game;
+    }
+
+    public void Start(ICapriHost host)
+    {
+        capri = host;
+        dataFolder = host.Folder;
+        statsFile = Path.Combine(dataFolder, "game-sessions.txt");
+        sessions = new List<GameSession>();
+        timerActive = false;
+        pendingResult = false;
+        LoadSessions();
+        capri.Log("Gaming Coach started.");
+    }
+
+    public void Stop()
+    {
+        if (timerActive)
+            EndGame(null);
+        SaveSessions();
+        capri.Log("Gaming Coach stopped.");
+    }
+
+    public bool Heard(string words)
+    {
+        string said = Wake.Replace((words != null ? words : "").Trim(), "").Trim();
+        if (said.Length == 0) return false;
+
+        if (pendingResult)
+        {
+            bool fresh = DateTime.Now - pendingSince <= PendingWindow;
+            pendingResult = false;
+            if (fresh)
+            {
+                string lower = said.Trim();
+                if (ReplyWin.IsMatch(lower))
+                {
+                    capri.Say(RecordResult(true, pendingMinutes));
+                    return true;
+                }
+                if (ReplyLoss.IsMatch(lower))
+                {
+                    capri.Say(RecordResult(false, pendingMinutes));
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        string reply = Answer(said);
+        if (reply == null) return false;
+        
+        capri.Say(reply);
+        return true;
+    }
+
+    private string Answer(string said)
+    {
+        if (GameHelp.IsMatch(said))
+            return "Gaming commands: 'start game timer', 'game over' (then answer W or L), 'game won' / 'game lost' while a timer runs, 'coach tilt check', 'game stats', 'game streak'.";
+
+        if (StartTimer.IsMatch(said))
+            return StartGame(said);
+
+        if (EndTimer.IsMatch(said))
+            return EndGame(said);
+
+        if (timerActive && DirectWin.IsMatch(said))
+            return RecordResult(true, ElapsedMinutes());
+
+        if (timerActive && DirectLoss.IsMatch(said))
+            return RecordResult(false, ElapsedMinutes());
+
+        if (TiltCheck.IsMatch(said))
+            return CheckTilt();
+
+        if (GameStats.IsMatch(said))
+            return ShowStats();
+
+        if (StreakCheck.IsMatch(said))
+            return CheckStreak();
+
+        return null;
+    }
+
+    private string StartGame(string said)
+    {
+        if (timerActive)
+        {
+            TimeSpan running = DateTime.Now - timerStart;
+            return "Timer already running. " + (int)running.TotalMinutes + " minutes so far.";
+        }
+
+        timerActive = true;
+        timerStart = DateTime.Now;
+        currentGame = ExtractGameName(said);
+
+        return "Game timer started. Show what you've got.";
+    }
+
+    private string EndGame(string said)
+    {
+        if (!timerActive)
+            return "No timer running.";
+
+        int minutes = ElapsedMinutes();
+        timerActive = false;
+        pendingResult = true;
+        pendingSince = DateTime.Now;
+        pendingMinutes = minutes;
+
+        return "Game over. " + minutes + " minutes played. Was it a W or an L?";
+    }
+
+    private int ElapsedMinutes()
+    {
+        return (int)(DateTime.Now - timerStart).TotalMinutes;
+    }
+
+    private string RecordResult(bool won, int minutes)
+    {
+        GameSession session = new GameSession
+        {
+            When = DateTime.Now,
+            Minutes = minutes,
+            Won = won,
+            Game = currentGame != null ? currentGame : "Unknown"
+        };
+
+        sessions.Add(session);
+        timerActive = false;
+        pendingResult = false;
+        SaveSessions();
+
+        // Calculate streak
+        int streak = CalculateCurrentStreak();
+        string streakMsg = "";
+        if (Math.Abs(streak) >= 3)
+        {
+            if (streak > 0)
+                streakMsg = " " + streak + " win streak, keep it up!";
+            else
+                streakMsg = " " + Math.Abs(streak) + " loss streak. Take a break?";
+        }
+
+        if (won)
+            return "W recorded. " + minutes + " minutes." + streakMsg;
+        else
+            return "L recorded. " + minutes + " minutes." + streakMsg;
+    }
+
+    private string CheckTilt()
+    {
+        if (sessions.Count < 3)
+            return "Not enough tracked games yet. Play more and I'll tell you if you're tilting.";
+
+        var recent = sessions.OrderByDescending(s => s.When).Take(10).ToList();
+        int losses = recent.Count(s => !s.Won);
+        int totalMinutes = recent.Sum(s => s.Minutes);
+
+        TimeSpan sinceFirst = DateTime.Now - recent.Last().When;
+        bool longSession = sinceFirst.TotalHours >= 2;
+        bool manyLosses = losses >= recent.Count * 0.6;
+
+        TimeSpan sinceAdvice = DateTime.Now - lastAdvice;
+        bool canAdvise = sinceAdvice.TotalMinutes >= 30;
+
+        if (longSession && manyLosses && canAdvise)
+        {
+            lastAdvice = DateTime.Now;
+            return "Yeah, you're tilted. " + losses + " losses in " + recent.Count + " games over " + (int)sinceFirst.TotalHours + " hours. Take a break.";
+        }
+        else if (manyLosses)
+        {
+            return "Getting there. " + losses + " losses in your last " + recent.Count + " games. Careful.";
+        }
+        else
+        {
+            return "No, you're fine. " + (recent.Count - losses) + " wins in " + recent.Count + " games. Keep going.";
+        }
+    }
+
+    private string ShowStats()
+    {
+        if (sessions.Count == 0)
+            return "No games tracked yet. Say 'start game timer' to begin.";
+
+        int wins = sessions.Count(s => s.Won);
+        int losses = sessions.Count - wins;
+        int totalMinutes = sessions.Sum(s => s.Minutes);
+        double winRate = sessions.Count > 0 ? (double)wins / sessions.Count * 100 : 0;
+
+        StringBuilder reply = new StringBuilder();
+        reply.Append(sessions.Count).Append(" games tracked. ");
+        reply.Append(wins).Append("W - ").Append(losses).Append("L. ");
+        reply.Append(winRate.ToString("F1")).Append("% win rate. ");
+        reply.Append((int)(totalMinutes / 60.0)).Append(" hours played.");
+
+        return reply.ToString();
+    }
+
+    private string CheckStreak()
+    {
+        if (sessions.Count < 2)
+            return "Not enough games for a streak.";
+
+        int streak = CalculateCurrentStreak();
+        if (streak == 0)
+            return "No active streak.";
+        else if (streak > 0)
+            return streak + " game win streak! Don't blow it.";
+        else
+            return Math.Abs(streak) + " game loss streak. Rough. Take a break?";
+    }
+
+    private int CalculateCurrentStreak()
+    {
+        if (sessions.Count == 0)
+            return 0;
+
+        var recent = sessions.OrderByDescending(s => s.When).ToList();
+        bool lastWon = recent[0].Won;
+        int streak = 0;
+
+        foreach (var session in recent)
+        {
+            if (session.Won == lastWon)
+                streak++;
+            else
+                break;
+        }
+
+        return lastWon ? streak : -streak;
+    }
+
+    private string ExtractGameName(string said)
+    {
+        // Try to extract game name from the command
+        string cleaned = Wake.Replace(said, "").Trim();
+        cleaned = StartTimer.Replace(cleaned, "").Trim();
+        
+        if (!string.IsNullOrEmpty(cleaned) && cleaned.Length < 30)
+            return cleaned;
+
+        return "Game";
+    }
+
+    private void LoadSessions()
+    {
+        try
+        {
+            if (!File.Exists(statsFile))
+                return;
+
+            string[] lines = File.ReadAllLines(statsFile);
+            foreach (string line in lines)
+            {
+                if (string.IsNullOrWhiteSpace(line))
+                    continue;
+
+                string[] parts = line.Split('|');
+                if (parts.Length >= 4)
+                {
+                    GameSession session = new GameSession();
+                    DateTime.TryParse(parts[0], out session.When);
+                    int.TryParse(parts[1], out session.Minutes);
+                    session.Won = parts[2] == "W";
+                    session.Game = parts[3];
+                    sessions.Add(session);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            capri.Log("Error loading game sessions: " + ex.Message);
+        }
+    }
+
+    private void SaveSessions()
+    {
+        try
+        {
+            StringBuilder content = new StringBuilder();
+            foreach (var session in sessions)
+            {
+                content.Append(session.When.ToString("o")).Append("|");
+                content.Append(session.Minutes).Append("|");
+                content.Append(session.Won ? "W" : "L").Append("|");
+                content.AppendLine(session.Game);
+            }
+            File.WriteAllText(statsFile, content.ToString());
+        }
+        catch (Exception ex)
+        {
+            capri.Log("Error saving game sessions: " + ex.Message);
+        }
+    }
+}
