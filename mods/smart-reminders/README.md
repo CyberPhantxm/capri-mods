@@ -1,49 +1,23 @@
 # Smart Reminders Plus
 
-Context-aware reminders. Set time-based reminders or reminders that trigger when you return to a specific context.
+Context reminders: say "remind me when I'm back on X to do Y" and Capri nudges you the next time you mention X. For timed reminders, just ask Capri.
 
-## Features
-
-- **Time-based Reminders** - "Remind me in X minutes"
-- **Context-based Reminders** - "Remind me when I'm back on Visual Studio"
-- **Auto-trigger** - Context reminders fire when you mention that context again
-- **Reminder List** - View all active reminders
-- **Persistent** - Reminders survive Capri restarts
+- Kind: code mod
+- Made by: flaqueeee
 
 ## Commands
 
-- `remind me in X minutes to [task]` - Set timed reminder
-- `remind me when I'm back on [context] to [task]` - Set context reminder
-- `list reminders` - Show active reminders
-- `clear reminders` - Delete all reminders
-- `reminder help` - Show all commands
+- `remind me when I'm back on X to do Y` (also "when I get back to X", "when I open X", "when I go back to X", "when I switch to X")
+- `context reminders` - list waiting context reminders
+- `clear context reminders` - delete the waiting ones
+- `context reminders help` - show these commands
 
-## Usage
+For timed reminders ("remind me in 20 minutes"), just ask Capri. This mod leaves those to her.
 
-```
-You: "Capri, remind me in 20 minutes to check the oven"
-Capri: "Reminder set for 20 minutes from now. I'll ping you."
+## How it works
 
-[20 minutes later]
-Capri: "Reminder: check the oven"
+The mod does not watch your screen or apps. A reminder fires the next time a line you say to Capri contains the X you named (for example "Visual Studio"), as long as at least 30 seconds have passed since you set it. Capri still answers that line as usual.
 
-You: "remind me when I'm back on Visual Studio to fix the login bug"
-Capri: "Reminder set for when you're back on Visual Studio. I'm watching."
+Reminders are saved in `reminders.txt` in this mod's own folder and survive restarts.
 
-[Later when you mention Visual Studio]
-Capri: "Reminder for Visual Studio: fix the login bug"
-```
-
-## How It Works
-
-Smart Reminders tracks both time-based and context-based reminders. Context reminders wait for you to mention the trigger word in conversation, then fire automatically. Time reminders check every time you speak to Capri.
-
-Data stored in `reminders.txt`.
-
-## Author
-
-**flaque** - November 2026
-
-## Version
-
-1.0.0
+Code mods are Windows only for now.

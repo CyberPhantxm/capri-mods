@@ -1,9 +1,9 @@
 // capri-mod: 1
 // id: duo-commentary
 // name: Duo Commentary
-// version: 1.0.0
-// author: flaque
-// description: Capri commente ce que tu fais en live. "comment this", "roast mode", "serious mode", "stop commenting".
+// version: 1.1.0
+// author: flaqueeee
+// description: Canned commentary lines in roast or serious style. Say "commentary on", "roast mode", "serious mode", "commentary quip", "commentary off".
 
 using System;
 using System.Collections.Generic;
@@ -16,12 +16,12 @@ public class DuoCommentary : ICapriMod
 {
     private const RegexOptions Plain = RegexOptions.IgnoreCase | RegexOptions.CultureInvariant;
     private static readonly Regex Wake = new Regex(@"^\s*(?:(?:hey|hi|ok|okay|yo|oi)[\s,]+)?capri\b[\s,.:;!?-]*|[\s,]+capri[\s.!?]*$", Plain);
-    private static readonly Regex CommentStart = new Regex(@"\bcomment\s+(?:this|on\s+this|what\s+you\s+see)\b|\bstart\s+commentary\b|\bnarrate\b", Plain);
-    private static readonly Regex CommentStop = new Regex(@"\bstop\s+comment(?:ing|ary)?\b|\bshut\s+up\b|\bsilence\b", Plain);
-    private static readonly Regex RoastMode = new Regex(@"\broast\s+mode\b|\broast\s+me\b|\bsavage\s+mode\b", Plain);
-    private static readonly Regex SeriousMode = new Regex(@"\bserious\s+mode\b|\bprofessional\s+mode\b|\bno\s+roast\b", Plain);
-    private static readonly Regex CommentHelp = new Regex(@"\bcomment(?:ary)?\s+help\b|\bhelp\s+comment\b", Plain);
-    private static readonly Regex ExplainThis = new Regex(@"\bexplain\s+(?:this|what\s+you\s+see)\b|\bwhat\s+am\s+i\s+(?:looking\s+at|doing)\b", Plain);
+    private static readonly Regex CommentStart = new Regex(@"\bcommentary\s+on\b|\bstart\s+commentary\b", Plain);
+    private static readonly Regex CommentStop = new Regex(@"\bcommentary\s+off\b|\bstop\s+commentary\b", Plain);
+    private static readonly Regex RoastMode = new Regex(@"\broast\s+mode\b", Plain);
+    private static readonly Regex SeriousMode = new Regex(@"\bserious\s+mode\b", Plain);
+    private static readonly Regex CommentHelp = new Regex(@"\bcommentary\s+help\b", Plain);
+    private static readonly Regex Quip = new Regex(@"\bcommentary\s+quip\b", Plain);
 
     private ICapriHost capri;
     private string dataFolder;
@@ -61,7 +61,7 @@ public class DuoCommentary : ICapriMod
     private string Answer(string said)
     {
         if (CommentHelp.IsMatch(said))
-            return "Commentary commands: 'comment this' for live narration, 'roast mode' for savage takes, 'serious mode' for professional, 'explain this' for one-time analysis, 'stop commenting' to end.";
+            return "Commentary commands: 'commentary on', 'commentary off', 'roast mode', 'serious mode', 'commentary quip' for one random line. I don't look at your screen, these are canned lines.";
 
         if (CommentStart.IsMatch(said))
             return StartCommentary();
@@ -75,8 +75,8 @@ public class DuoCommentary : ICapriMod
         if (SeriousMode.IsMatch(said))
             return SetRoastMode(false);
 
-        if (ExplainThis.IsMatch(said))
-            return ExplainScreen();
+        if (Quip.IsMatch(said))
+            return OneComment();
 
         return null;
     }
@@ -84,26 +84,26 @@ public class DuoCommentary : ICapriMod
     private string StartCommentary()
     {
         if (commentaryActive)
-            return "Already commenting. Tell me to stop if you want silence.";
+            return "Commentary is already on. Say 'commentary off' to end it.";
 
         commentaryActive = true;
         commentCount = 0;
         lastComment = DateTime.Now;
 
         if (roastMode)
-            return "Commentary mode: roast edition. This is gonna be good, choom.";
+            return "Commentary on, roast edition. Say 'commentary quip' for a line.";
         else
-            return "Commentary mode on. I'll narrate what I see. Professional style.";
+            return "Commentary on, serious style. Say 'commentary quip' for a line.";
     }
 
     private string StopCommentary()
     {
         if (!commentaryActive)
-            return "Wasn't commenting anyway.";
+            return "Commentary wasn't on.";
 
         commentaryActive = false;
         return commentCount > 0 
-            ? "Commentary off. That was " + commentCount + " comments. You're welcome." 
+            ? "Commentary off. That was " + commentCount + " lines." 
             : "Commentary off.";
     }
 
@@ -113,17 +113,16 @@ public class DuoCommentary : ICapriMod
         
         if (roast)
             return commentaryActive 
-                ? "Switching to roast mode. Let's get savage." 
-                : "Roast mode ready. Say 'comment this' and I'll destroy you.";
+                ? "Switching to roast mode." 
+                : "Roast mode set. Say 'commentary quip' for a line.";
         else
             return commentaryActive 
-                ? "Switching to serious mode. Professional commentary only." 
-                : "Serious mode ready. Say 'comment this' for clean narration.";
+                ? "Switching to serious mode." 
+                : "Serious mode set. Say 'commentary quip' for a line.";
     }
 
-    private string ExplainScreen()
+    private string OneComment()
     {
-        // Single commentary without activating continuous mode
         commentCount++;
         
         if (roastMode)
@@ -135,16 +134,16 @@ public class DuoCommentary : ICapriMod
     private string GetRoastComment()
     {
         string[] roasts = {
-            "I see you're working hard on... wait, is that a game? Classic.",
-            "That code? Yeah, I've seen worse. Not much worse, but I've seen it.",
+            "Bold of you to call that a plan.",
+            "I've seen worse. Not much worse, but I've seen it.",
             "You know there's a StackOverflow for this, right? Just checking.",
-            "Oh we're gaming again. Third hour straight. Bold strategy.",
+            "Another break? Bold strategy.",
             "That's certainly one way to do it. Not the best way, but one way.",
             "I'd explain what's wrong here but we don't have that kind of time, choom.",
             "You're really committed to this approach. Respect. It's wrong, but respect.",
-            "Gaming during work hours? I'm not your mom, do what you want.",
-            "That error message is pretty clear but sure, keep clicking randomly.",
-            "I see YouTube's open. For research, obviously. Sure."
+            "Working hard or hardly working? I'm not your mom, do what you want.",
+            "Sure, keep clicking randomly. That always works.",
+            "Research, obviously. Sure."
         };
 
         return roasts[random.Next(roasts.Length)];
@@ -153,16 +152,16 @@ public class DuoCommentary : ICapriMod
     private string GetSeriousComment()
     {
         string[] comments = {
-            "I see code on screen. Multiple files open. Looks like active development.",
-            "Browser with documentation open. Good practice, checking references.",
-            "Game running. Taking a break, or is this the actual task?",
-            "Terminal visible. Command line work, looks productive.",
-            "Lots of tabs open. Either research or distraction, hard to tell.",
-            "Text editor front and center. Writing mode, I respect it.",
-            "Debugging session in progress. Stack traces visible.",
-            "Design work showing. Visual elements being arranged.",
-            "Testing interface. QA work or trying to break something.",
-            "Communication app visible. Collaboration or procrastination?"
+            "Steady progress is still progress.",
+            "Checking the documentation first is good practice.",
+            "A short break now and then helps focus.",
+            "Small steps, one at a time. Looks productive.",
+            "Either research or distraction, hard to tell.",
+            "Writing mode. I respect it.",
+            "Debugging takes patience. Read the error message twice.",
+            "Good design is mostly iteration.",
+            "Testing is how you find the problems before others do.",
+            "Collaboration or procrastination? You decide."
         };
 
         return comments[random.Next(comments.Length)];

@@ -1,52 +1,27 @@
 # Shadow Clone
 
-Your debug partner and brainstorm assistant. Capture contexts, track bugs, and get suggestions.
+A small debug notebook. Save notes and bugs by typing them, compare notes, and get a generic tip. It does not see your screen.
 
-## Features
-
-- **Context Capture** - Save what you're working on with notes
-- **Bug Tracking** - Track bugs with IDs and context
-- **Context Comparison** - Compare current state with previous captures
-- **Smart Suggestions** - Get contextual ideas based on what you're doing
-- **Problem Analysis** - Analyzes captured context for common issues
+- Kind: code mod
+- Made by: flaqueeee
 
 ## Commands
 
-- `look at this` / `regarde ça` - Capture current context
-- `track this bug [description]` - Log a bug
-- `list bugs` - Show open bugs
-- `compare with before` - Compare with previous capture
-- `any ideas?` - Get contextual suggestions
-- `analyze this` - Analyze current context for problems
-- `clear context` - Clear current context
-- `clone help` - Show all commands
+Every command starts with "clone":
 
-## Usage
+- `clone capture <text>` - save a note about what you're working on
+- `clone compare` - compare your last two notes
+- `clone track bug <text>` - log a bug
+- `clone bugs` - list open bugs
+- `clone ideas` - get a generic tip based on your last note's type
+- `clone analyze` - keyword check of your last note
+- `clone clear` - drop the current note
+- `clone help` - list the commands
 
-```
-You: "Capri, look at this API timeout issue"
-Capri: "Got it. Context captured: API timeout issue. I'm watching this, choom."
+Capture only stores the text you give it. It never looks at your screen, and the tips and analysis are simple canned ones, not real inspection.
 
-You: "track this bug connection fails after 30 seconds"
-Capri: "Bug #1 tracked: connection fails after 30 seconds. I'll remember this."
+## Where it saves
 
-You: "any ideas?"
-Capri: "Add logging to trace where it fails."
+Notes and bugs are saved as `contexts.txt` and `bugs.txt` in a `shadow-clone` folder inside its own mod folder.
 
-You: "list bugs"
-Capri: "1 open bug: #1: connection fails after 30 seconds"
-```
-
-## How It Works
-
-Shadow Clone captures contexts and bugs with timestamps. It provides contextual suggestions based on the type of work (bug, code, general). The compare feature shows time elapsed and context changes.
-
-Data stored in `contexts.txt` and `bugs.txt`.
-
-## Author
-
-**flaque** - November 2026
-
-## Version
-
-1.0.0
+Code mods are Windows only for now.

@@ -1,9 +1,9 @@
 // capri-mod: 1
 // id: shadow-clone
 // name: Shadow Clone
-// version: 1.0.0
-// author: flaque
-// description: Ton pote de debug et brainstorm. "Capri look at this", "compare with before", "track this bug".
+// version: 1.1.0
+// author: flaqueeee
+// description: A debug notebook. Say "clone capture <text>" to save a note, "clone track bug <text>" to log a bug, "clone compare", "clone ideas". It does not see your screen.
 
 using System;
 using System.Collections.Generic;
@@ -17,14 +17,15 @@ public class ShadowClone : ICapriMod
 {
     private const RegexOptions Plain = RegexOptions.IgnoreCase | RegexOptions.CultureInvariant;
     private static readonly Regex Wake = new Regex(@"^\s*(?:(?:hey|hi|ok|okay|yo|oi)[\s,]+)?capri\b[\s,.:;!?-]*|[\s,]+capri[\s.!?]*$", Plain);
-    private static readonly Regex LookAt = new Regex(@"\blook\s+at\s+this\b|\bcheck\s+this\b|\bsee\s+this\b|\bregarde\s+[cç]a\b", Plain);
-    private static readonly Regex Compare = new Regex(@"\bcompare\s+with\s+before\b|\bwhat\s+changed\b|\bdifference\s+from\b|\bshow\s+diff\b", Plain);
-    private static readonly Regex TrackBug = new Regex(@"\btrack\s+(?:this\s+)?bug\b|\bnote\s+(?:this\s+)?(?:bug|error|issue)\b|\bremember\s+this\s+(?:bug|error)\b", Plain);
-    private static readonly Regex BugList = new Regex(@"\b(?:show|list)\s+bugs?\b|\bwhat\s+bugs\b|\bmy\s+bugs?\b", Plain);
-    private static readonly Regex GetIdea = new Regex(@"\b(?:any|got)\s+ideas?\b|\bsuggestions?\b|\bwhat\s+(?:do\s+you\s+)?think\b|\bhelp\s+me\s+(?:out|here)\b", Plain);
-    private static readonly Regex Analyze = new Regex(@"\banalyze\s+this\b|\bwhat(?:'s| is)\s+wrong\b|\bfind\s+the\s+(?:problem|issue|bug)\b", Plain);
-    private static readonly Regex ClearContext = new Regex(@"\bclear\s+context\b|\bforget\s+this\b|\breset\s+clone\b", Plain);
-    private static readonly Regex CloneHelp = new Regex(@"\b(?:clone|shadow)\s+help\b|\bhelp\s+(?:clone|shadow)\b", Plain);
+    private static readonly Regex ClonePrefix = new Regex(@"^clone\b[\s,.:;!?-]*", Plain);
+    private static readonly Regex Capture = new Regex(@"^capture\b[\s,.:;!?-]*", Plain);
+    private static readonly Regex Compare = new Regex(@"^compare\b[\s.!?]*$", Plain);
+    private static readonly Regex TrackBug = new Regex(@"^track\s+bug\b[\s,.:;!?-]*", Plain);
+    private static readonly Regex BugList = new Regex(@"^bugs\b[\s.!?]*$", Plain);
+    private static readonly Regex GetIdea = new Regex(@"^ideas\b[\s.!?]*$", Plain);
+    private static readonly Regex Analyze = new Regex(@"^analy[sz]e\b[\s.!?]*$", Plain);
+    private static readonly Regex ClearContext = new Regex(@"^clear\b[\s.!?]*$", Plain);
+    private static readonly Regex CloneHelp = new Regex(@"^help\b[\s.!?]*$", Plain);
 
     private ICapriHost capri;
     private string dataFolder;
@@ -90,28 +91,32 @@ public class ShadowClone : ICapriMod
 
     private string Answer(string said)
     {
-        if (CloneHelp.IsMatch(said))
-            return "Shadow Clone commands: 'look at this' to capture context, 'compare with before' for diffs, 'track this bug' to log issues, 'any ideas?' for suggestions, 'analyze this' for problem-solving, 'list bugs' to see tracked issues.";
+        Match m = ClonePrefix.Match(said);
+        if (!m.Success) return null;
+        string cmd = said.Substring(m.Length).Trim();
 
-        if (LookAt.IsMatch(said))
-            return CaptureContext(said, "general");
+        if (cmd.Length == 0 || CloneHelp.IsMatch(cmd))
+            return "Shadow Clone commands: 'clone capture <text>' to save a note, 'clone compare' to compare the last two notes, 'clone track bug <text>' to log a bug, 'clone bugs' to list open bugs, 'clone ideas' for a generic tip, 'clone analyze' for a keyword check of your last note, 'clone clear' to drop the current note. I can't see your screen, I only store what you tell me.";
 
-        if (Compare.IsMatch(said))
+        if (Capture.IsMatch(cmd))
+            return CaptureContext(cmd, "general");
+
+        if (Compare.IsMatch(cmd))
             return CompareWithPrevious();
 
-        if (TrackBug.IsMatch(said))
-            return TrackNewBug(said);
+        if (TrackBug.IsMatch(cmd))
+            return TrackNewBug(cmd);
 
-        if (BugList.IsMatch(said))
+        if (BugList.IsMatch(cmd))
             return ListBugs();
 
-        if (GetIdea.IsMatch(said))
+        if (GetIdea.IsMatch(cmd))
             return ProvideSuggestions();
 
-        if (Analyze.IsMatch(said))
+        if (Analyze.IsMatch(cmd))
             return AnalyzeProblem();
 
-        if (ClearContext.IsMatch(said))
+        if (ClearContext.IsMatch(cmd))
             return ClearCurrentContext();
 
         return null;
@@ -127,7 +132,7 @@ public class ShadowClone : ICapriMod
         {
             When = DateTime.Now,
             Description = description,
-            Details = said,
+            Details = said.Replace("|", "/").Replace("\r", " ").Replace("\n", " "),
             Category = category
         };
 
@@ -139,13 +144,13 @@ public class ShadowClone : ICapriMod
 
         SaveData();
 
-        return "Got it. Context captured: " + description + ". I'm watching this, choom.";
+        return "Saved note: " + description + ". (I only store what you tell me, I can't see your screen.)";
     }
 
     private string CompareWithPrevious()
     {
         if (captures.Count < 2)
-            return "Need at least two captured contexts to compare. Say 'look at this' first.";
+            return "Need at least two saved notes to compare. Use 'clone capture <text>' first.";
 
         var current = captures[0];
         var previous = captures[1];
@@ -153,7 +158,7 @@ public class ShadowClone : ICapriMod
         TimeSpan gap = current.When - previous.When;
         
         StringBuilder reply = new StringBuilder();
-        reply.Append("Comparing now vs ");
+        reply.Append("Comparing latest note vs ");
         
         if (gap.TotalMinutes < 60)
             reply.Append((int)gap.TotalMinutes).Append(" minutes ago. ");
@@ -191,7 +196,7 @@ public class ShadowClone : ICapriMod
         // Also capture as context
         CaptureContext(said, "bug");
 
-        return "Bug #" + bug.Id + " tracked: " + description + ". I'll remember this.";
+        return "Bug #" + bug.Id + " tracked: " + description + ". Saved in my notes.";
     }
 
     private string ListBugs()
@@ -199,7 +204,7 @@ public class ShadowClone : ICapriMod
         var open = bugs.Where(b => !b.Resolved).OrderByDescending(b => b.Reported).ToList();
         
         if (open.Count == 0)
-            return "No open bugs. Clean slate, choom.";
+            return "No open bugs. Clean slate.";
 
         StringBuilder reply = new StringBuilder();
         reply.Append(open.Count).Append(" open bug").Append(open.Count == 1 ? "" : "s").Append(": ");
@@ -219,7 +224,7 @@ public class ShadowClone : ICapriMod
     private string ProvideSuggestions()
     {
         if (currentContext == null)
-            return "No context captured yet. Say 'look at this' first so I know what you're working on.";
+            return "No note saved yet. Say 'clone capture <text>' first so I know what you're working on.";
 
         // Generate contextual suggestions based on category
         string[] suggestions;
@@ -264,7 +269,7 @@ public class ShadowClone : ICapriMod
     private string AnalyzeProblem()
     {
         if (currentContext == null)
-            return "No context to analyze. Capture something with 'look at this' first.";
+            return "No note to analyze. Save one with 'clone capture <text>' first.";
 
         // Simple analysis based on keywords in the context
         string lower = currentContext.Details.ToLowerInvariant();
@@ -287,27 +292,28 @@ public class ShadowClone : ICapriMod
             observations.Add("Inconsistent behavior. Check environment differences or state management.");
 
         if (observations.Count == 0)
-            observations.Add("Need more context. Describe the problem in detail.");
+            observations.Add("Not enough in your note. Save a more detailed one with 'clone capture <text>'.");
 
-        return "Analysis: " + observations[0];
+        return "Keyword check of your last note: " + observations[0];
     }
 
     private string ClearCurrentContext()
     {
         if (currentContext == null)
-            return "No active context to clear.";
+            return "No active note to clear.";
 
         string desc = currentContext.Description;
         currentContext = null;
         
-        return "Context cleared: " + desc + ". Fresh start.";
+        return "Note cleared: " + desc + ". Fresh start.";
     }
 
     private string ExtractDescription(string said)
     {
-        string cleaned = Wake.Replace(said, "").Trim();
-        cleaned = LookAt.Replace(cleaned, "").Trim();
+        string cleaned = said.Trim();
+        cleaned = Capture.Replace(cleaned, "").Trim();
         cleaned = TrackBug.Replace(cleaned, "").Trim();
+        cleaned = cleaned.Replace("|", "/").Replace("\r", " ").Replace("\n", " ");
         
         if (!string.IsNullOrEmpty(cleaned) && cleaned.Length < 100)
             return cleaned;

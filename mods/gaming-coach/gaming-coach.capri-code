@@ -1,9 +1,9 @@
 // capri-mod: 1
 // id: gaming-coach
 // name: Gaming Coach
-// version: 1.0.0
-// author: flaque
-// description: Track tes games et ta perf. "start game timer", "game stats", "am I tilted".
+// version: 1.1.0
+// author: flaqueeee
+// description: Times your games and tracks wins, losses, streaks and tilt. Say "start game timer", "game over", "game stats" or "coach tilt check".
 
 using System;
 using System.Collections.Generic;
@@ -17,14 +17,17 @@ public class GamingCoach : ICapriMod
 {
     private const RegexOptions Plain = RegexOptions.IgnoreCase | RegexOptions.CultureInvariant;
     private static readonly Regex Wake = new Regex(@"^\s*(?:(?:hey|hi|ok|okay|yo|oi)[\s,]+)?capri\b[\s,.:;!?-]*|[\s,]+capri[\s.!?]*$", Plain);
-    private static readonly Regex StartTimer = new Regex(@"\b(?:start|begin)\s+game\s+timer\b|\bchrono\s+(?:this\s+)?game\b|\btime\s+(?:this\s+)?(?:game|match)\b", Plain);
+    private static readonly Regex StartTimer = new Regex(@"\b(?:start|begin)\s+game\s+timer\b|\bgame\s+timer\s+start\b|\bcoach\s+(?:start|chrono)\b|\bgame\s+chrono\b", Plain);
     private static readonly Regex EndTimer = new Regex(@"\b(?:end|stop)\s+game\s+timer\b|\bgame\s+(?:done|over|ended)\b", Plain);
-    private static readonly Regex GameWin = new Regex(@"\b(?:i\s+)?(?:won|victory|win|gg)\b|\bw\b(?!\w)", Plain);
-    private static readonly Regex GameLoss = new Regex(@"\b(?:i\s+)?(?:lost|defeat|loss|rip)\b|\bl\b(?!\w)", Plain);
-    private static readonly Regex TiltCheck = new Regex(@"\bam\s+i\s+tilt(?:ed|ing)?\b|\btilt\s+check\b|\bhow\s+tilted\b", Plain);
-    private static readonly Regex GameStats = new Regex(@"\bgame\s+stats?\b|\bgaming\s+stats?\b|\bmy\s+(?:game\s+)?performance\b", Plain);
-    private static readonly Regex StreakCheck = new Regex(@"\bmy\s+streak\b|\bwin\s+streak\b|\bloss\s+streak\b|\bstreak\s+check\b", Plain);
-    private static readonly Regex GameHelp = new Regex(@"\bgame\s+help\b|\bhelp\s+game\b|\bcoach\s+help\b", Plain);
+    private static readonly Regex DirectWin = new Regex(@"^(?:game|coach)\s+(?:won|win|victory)\W*$", Plain);
+    private static readonly Regex DirectLoss = new Regex(@"^(?:game|coach)\s+(?:lost|loss|defeat)\W*$", Plain);
+    private static readonly Regex ReplyWin = new Regex(@"^(?:i\s+)?(?:w|win|won)\W*$", Plain);
+    private static readonly Regex ReplyLoss = new Regex(@"^(?:i\s+)?(?:l|loss|lost)\W*$", Plain);
+    private static readonly Regex TiltCheck = new Regex(@"\b(?:coach|game)\s+tilt(?:\s+check)?\b|\bgame\s+tilt\s+check\b|\bcoach\s+am\s+i\s+tilt(?:ed|ing)\b", Plain);
+    private static readonly Regex GameStats = new Regex(@"\bgame\s+stats?\b|\bgaming\s+stats?\b|\bcoach\s+stats?\b", Plain);
+    private static readonly Regex StreakCheck = new Regex(@"\bgame\s+streak\b|\bcoach\s+streak\b", Plain);
+    private static readonly Regex GameHelp = new Regex(@"\bgame\s+help\b|\bcoach\s+help\b", Plain);
+    private static readonly TimeSpan PendingWindow = TimeSpan.FromMinutes(2);
 
     private ICapriHost capri;
     private string dataFolder;
@@ -34,6 +37,9 @@ public class GamingCoach : ICapriMod
     private string currentGame;
     private List<GameSession> sessions;
     private DateTime lastAdvice;
+    private bool pendingResult;
+    private DateTime pendingSince;
+    private int pendingMinutes;
 
     private class GameSession
     {
@@ -50,6 +56,7 @@ public class GamingCoach : ICapriMod
         statsFile = Path.Combine(dataFolder, "game-sessions.txt");
         sessions = new List<GameSession>();
         timerActive = false;
+        pendingResult = false;
         LoadSessions();
         capri.Log("Gaming Coach started.");
     }
@@ -67,6 +74,27 @@ public class GamingCoach : ICapriMod
         string said = Wake.Replace((words != null ? words : "").Trim(), "").Trim();
         if (said.Length == 0) return false;
 
+        if (pendingResult)
+        {
+            bool fresh = DateTime.Now - pendingSince <= PendingWindow;
+            pendingResult = false;
+            if (fresh)
+            {
+                string lower = said.Trim();
+                if (ReplyWin.IsMatch(lower))
+                {
+                    capri.Say(RecordResult(true, pendingMinutes));
+                    return true;
+                }
+                if (ReplyLoss.IsMatch(lower))
+                {
+                    capri.Say(RecordResult(false, pendingMinutes));
+                    return true;
+                }
+            }
+            return false;
+        }
+
         string reply = Answer(said);
         if (reply == null) return false;
         
@@ -77,7 +105,7 @@ public class GamingCoach : ICapriMod
     private string Answer(string said)
     {
         if (GameHelp.IsMatch(said))
-            return "Commandes gaming: 'chrono this game' pour timer, 'I won' ou 'I lost' pour record le résultat, 'am I tilted' pour tilt check, 'game stats' pour ta perf, 'streak check' pour tes streaks.";
+            return "Gaming commands: 'start game timer', 'game over' (then answer W or L), 'game won' / 'game lost' while a timer runs, 'coach tilt check', 'game stats', 'game streak'.";
 
         if (StartTimer.IsMatch(said))
             return StartGame(said);
@@ -85,11 +113,11 @@ public class GamingCoach : ICapriMod
         if (EndTimer.IsMatch(said))
             return EndGame(said);
 
-        if (GameWin.IsMatch(said) && timerActive)
-            return RecordResult(true);
+        if (timerActive && DirectWin.IsMatch(said))
+            return RecordResult(true, ElapsedMinutes());
 
-        if (GameLoss.IsMatch(said) && timerActive)
-            return RecordResult(false);
+        if (timerActive && DirectLoss.IsMatch(said))
+            return RecordResult(false, ElapsedMinutes());
 
         if (TiltCheck.IsMatch(said))
             return CheckTilt();
@@ -108,35 +136,37 @@ public class GamingCoach : ICapriMod
         if (timerActive)
         {
             TimeSpan running = DateTime.Now - timerStart;
-            return "Timer déjà en cours. " + (int)running.TotalMinutes + " minutes jusqu'ici.";
+            return "Timer already running. " + (int)running.TotalMinutes + " minutes so far.";
         }
 
         timerActive = true;
         timerStart = DateTime.Now;
         currentGame = ExtractGameName(said);
 
-        return "Timer game lancé. Montre ce que t'as.";
+        return "Game timer started. Show what you've got.";
     }
 
     private string EndGame(string said)
     {
         if (!timerActive)
-            return "Pas de timer en cours.";
+            return "No timer running.";
 
-        TimeSpan duration = DateTime.Now - timerStart;
+        int minutes = ElapsedMinutes();
         timerActive = false;
+        pendingResult = true;
+        pendingSince = DateTime.Now;
+        pendingMinutes = minutes;
 
-        return "Game terminée. " + (int)duration.TotalMinutes + " minutes jouées. C'était une W ou L?";
+        return "Game over. " + minutes + " minutes played. Was it a W or an L?";
     }
 
-    private string RecordResult(bool won)
+    private int ElapsedMinutes()
     {
-        if (!timerActive)
-            return "Pas de game active à record.";
+        return (int)(DateTime.Now - timerStart).TotalMinutes;
+    }
 
-        TimeSpan duration = DateTime.Now - timerStart;
-        int minutes = (int)duration.TotalMinutes;
-
+    private string RecordResult(bool won, int minutes)
+    {
         GameSession session = new GameSession
         {
             When = DateTime.Now,
@@ -147,6 +177,7 @@ public class GamingCoach : ICapriMod
 
         sessions.Add(session);
         timerActive = false;
+        pendingResult = false;
         SaveSessions();
 
         // Calculate streak
@@ -155,21 +186,21 @@ public class GamingCoach : ICapriMod
         if (Math.Abs(streak) >= 3)
         {
             if (streak > 0)
-                streakMsg = " " + streak + " win streak, continue comme ça!";
+                streakMsg = " " + streak + " win streak, keep it up!";
             else
-                streakMsg = " " + Math.Abs(streak) + " loss streak. Prends une pause?";
+                streakMsg = " " + Math.Abs(streak) + " loss streak. Take a break?";
         }
 
         if (won)
-            return "W enregistrée. " + minutes + " minutes." + streakMsg;
+            return "W recorded. " + minutes + " minutes." + streakMsg;
         else
-            return "L enregistrée. " + minutes + " minutes." + streakMsg;
+            return "L recorded. " + minutes + " minutes." + streakMsg;
     }
 
     private string CheckTilt()
     {
         if (sessions.Count < 3)
-            return "Pas assez de games trackées. Joue plus et je te dirai si t'es tilt.";
+            return "Not enough tracked games yet. Play more and I'll tell you if you're tilting.";
 
         var recent = sessions.OrderByDescending(s => s.When).Take(10).ToList();
         int losses = recent.Count(s => !s.Won);
@@ -185,22 +216,22 @@ public class GamingCoach : ICapriMod
         if (longSession && manyLosses && canAdvise)
         {
             lastAdvice = DateTime.Now;
-            return "Ouais t'es tilt. " + losses + " losses sur " + recent.Count + " games en " + (int)sinceFirst.TotalHours + " heures. Pause obligatoire.";
+            return "Yeah, you're tilted. " + losses + " losses in " + recent.Count + " games over " + (int)sinceFirst.TotalHours + " hours. Take a break.";
         }
         else if (manyLosses)
         {
-            return "Ça arrive là. " + losses + " losses sur " + recent.Count + " dernières games. Fais gaffe.";
+            return "Getting there. " + losses + " losses in your last " + recent.Count + " games. Careful.";
         }
         else
         {
-            return "Non t'es bien. " + (recent.Count - losses) + " wins sur " + recent.Count + " games. Continue.";
+            return "No, you're fine. " + (recent.Count - losses) + " wins in " + recent.Count + " games. Keep going.";
         }
     }
 
     private string ShowStats()
     {
         if (sessions.Count == 0)
-            return "Aucune game trackée. Dis 'chrono this game' pour start.";
+            return "No games tracked yet. Say 'start game timer' to begin.";
 
         int wins = sessions.Count(s => s.Won);
         int losses = sessions.Count - wins;
@@ -208,10 +239,10 @@ public class GamingCoach : ICapriMod
         double winRate = sessions.Count > 0 ? (double)wins / sessions.Count * 100 : 0;
 
         StringBuilder reply = new StringBuilder();
-        reply.Append(sessions.Count).Append(" games trackées. ");
+        reply.Append(sessions.Count).Append(" games tracked. ");
         reply.Append(wins).Append("W - ").Append(losses).Append("L. ");
         reply.Append(winRate.ToString("F1")).Append("% win rate. ");
-        reply.Append((int)(totalMinutes / 60.0)).Append(" heures jouées.");
+        reply.Append((int)(totalMinutes / 60.0)).Append(" hours played.");
 
         return reply.ToString();
     }
@@ -219,15 +250,15 @@ public class GamingCoach : ICapriMod
     private string CheckStreak()
     {
         if (sessions.Count < 2)
-            return "Pas assez de games pour une streak.";
+            return "Not enough games for a streak.";
 
         int streak = CalculateCurrentStreak();
         if (streak == 0)
-            return "Pas de streak active.";
+            return "No active streak.";
         else if (streak > 0)
-            return streak + " game win streak! Gâche pas tout.";
+            return streak + " game win streak! Don't blow it.";
         else
-            return Math.Abs(streak) + " game loss streak. Galère. Prends une pause?";
+            return Math.Abs(streak) + " game loss streak. Rough. Take a break?";
     }
 
     private int CalculateCurrentStreak()

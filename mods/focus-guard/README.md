@@ -1,45 +1,18 @@
 # Focus Guard
 
-Anti-distraction protection for Capri. Start focus mode with a timer and track your distractions.
+Timed focus sessions that count how often you mention YouTube, Reddit and other distracting sites. Capri tells you when the session ends.
 
-## Features
-
-- **Focus Mode Timer** - Set focus sessions from 5 to 240 minutes
-- **Distraction Tracking** - Keeps count of distractions per session
-- **Statistics** - Track total focus time and distraction rate
-- **Auto-save** - All stats persist between sessions
+- Kind: code mod
+- Made by: flaqueeee
 
 ## Commands
 
-- `focus mode 30 minutes` - Start a focus session
-- `am I focused` - Check remaining time and distractions
-- `focus off` - End current session early
-- `focus stats` - View your focus statistics
-- `focus help` - Show all commands
+- `focus mode 30 minutes` starts a session (5 to 240 minutes, default 30)
+- `am I focused` shows the time left and distractions so far
+- `focus off` ends the session early
+- `focus stats` shows your totals
+- `focus help` lists the commands
 
-## Usage
+While a session runs, mentioning YouTube, Twitter, Reddit, Instagram, TikTok or Facebook adds to the distraction count. Capri still answers those lines as usual. A timer tells you when the session is over.
 
-```
-You: "Capri, focus mode 45 minutes"
-Capri: "Focus mode on pour 45 minutes. Je te surveille. Pas de slack."
-
-You: "am I focused"
-Capri: "40 minutes restant. Aucune distraction pour l'instant. Continue."
-
-You: "focus off"
-Capri: "Session focus terminée. 5 minutes sur 45. Zéro distraction. Clean."
-```
-
-## How It Works
-
-Focus Guard tracks your focus sessions and counts distractions. When you mention distracting sites (YouTube, Reddit, Twitter, etc.) during focus mode, it catches you and increments the distraction counter.
-
-All statistics are saved locally in `focus-stats.txt`.
-
-## Author
-
-**flaque** - November 2026
-
-## Version
-
-1.0.0
+Stats are saved in `focus-stats.txt` in the mod's own folder. Code mods are Windows only for now.

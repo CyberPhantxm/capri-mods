@@ -1,9 +1,9 @@
 // capri-mod: 1
 // id: focus-guard
 // name: Focus Guard
-// version: 1.0.0
-// author: flaque
-// description: Te garde focus et chope les distractions. "focus mode 30 minutes", "focus stats", "am I focused".
+// version: 1.1.0
+// author: flaqueeee
+// description: Timed focus sessions that count distraction mentions. Say "focus mode 30 minutes", "focus stats" or "am I focused".
 
 using System;
 using System.Collections.Generic;
@@ -16,11 +16,11 @@ public class FocusGuard : ICapriMod
 {
     private const RegexOptions Plain = RegexOptions.IgnoreCase | RegexOptions.CultureInvariant;
     private static readonly Regex Wake = new Regex(@"^\s*(?:(?:hey|hi|ok|okay|yo|oi)[\s,]+)?capri\b[\s,.:;!?-]*|[\s,]+capri[\s.!?]*$", Plain);
-    private static readonly Regex FocusStart = new Regex(@"\bfocus\s+(?:mode|on|up|time)\b|\bstart\s+focus\b|\bno\s+distract", Plain);
-    private static readonly Regex FocusEnd = new Regex(@"\bfocus\s+(?:off|end|stop|done)\b|\bstop\s+focus\b|\bbreak\s+time\b", Plain);
-    private static readonly Regex FocusCheck = new Regex(@"\bam\s+i\s+focused\b|\bfocus\s+(?:check|status)\b|\bhow\s+focused\b", Plain);
-    private static readonly Regex FocusStats = new Regex(@"\bfocus\s+stats?\b|\bdistract(?:ion|ions)\s+stats?\b|\bhow\s+distracted\b", Plain);
-    private static readonly Regex FocusHelp = new Regex(@"\bfocus\s+help\b|\bhelp\s+focus\b", Plain);
+    private static readonly Regex FocusStart = new Regex(@"\bfocus\s+mode\b|\bstart\s+focus\b", Plain);
+    private static readonly Regex FocusEnd = new Regex(@"\bfocus\s+(?:mode\s+)?(?:off|end|stop|done)\b|\bstop\s+focus\b", Plain);
+    private static readonly Regex FocusCheck = new Regex(@"\bam\s+i\s+focused\b|\bfocus\s+(?:check|status)\b", Plain);
+    private static readonly Regex FocusStats = new Regex(@"\bfocus\s+stats?\b|\bdistraction\s+stats?\b", Plain);
+    private static readonly Regex FocusHelp = new Regex(@"\bfocus\s+help\b", Plain);
     private static readonly Regex Minutes = new Regex(@"\b(\d+)\s*(?:min(?:ute)?s?|m)\b", Plain);
 
     private ICapriHost capri;
@@ -34,6 +34,7 @@ public class FocusGuard : ICapriMod
     private int totalFocusSessions;
     private int totalFocusMinutes;
     private DateTime lastWarning;
+    private ICapriTimer endTimer;
 
     public void Start(ICapriHost host)
     {
@@ -47,6 +48,7 @@ public class FocusGuard : ICapriMod
 
     public void Stop()
     {
+        CancelTimer();
         if (focusMode)
             EndFocus(true);
         SaveStats();
@@ -68,13 +70,13 @@ public class FocusGuard : ICapriMod
     private string Answer(string said)
     {
         if (FocusHelp.IsMatch(said))
-            return "Commandes focus: 'focus mode 30 minutes' pour démarrer, 'focus off' pour arrêter, 'am I focused' pour check, 'focus stats' pour tes distractions.";
-
-        if (FocusStart.IsMatch(said))
-            return StartFocus(said);
+            return "Focus commands: 'focus mode 30 minutes' to start, 'focus off' to stop, 'am I focused' to check, 'focus stats' for your distractions.";
 
         if (FocusEnd.IsMatch(said))
             return EndFocus(false);
+
+        if (FocusStart.IsMatch(said))
+            return StartFocus(said);
 
         if (FocusCheck.IsMatch(said))
             return CheckFocus();
@@ -92,7 +94,7 @@ public class FocusGuard : ICapriMod
     private string StartFocus(string said)
     {
         if (focusMode)
-            return "Déjà en focus mode. " + GetRemainingTime() + " restant.";
+            return "Already in focus mode. " + GetRemainingTime() + " left.";
 
         Match m = Minutes.Match(said);
         int minutes = 30; // default
@@ -107,13 +109,33 @@ public class FocusGuard : ICapriMod
         distractionsThisSession = 0;
         totalFocusSessions++;
 
-        return "Focus mode on pour " + minutes + " minutes. Je te surveille. Pas de slack.";
+        CancelTimer();
+        endTimer = capri.Timers.After(minutes * 60.0, OnTimerEnd);
+
+        return "Focus mode on for " + minutes + " minutes. I'll count your distractions. No slacking.";
+    }
+
+    private void CancelTimer()
+    {
+        if (endTimer != null)
+        {
+            endTimer.Cancel();
+            endTimer = null;
+        }
+    }
+
+    private void OnTimerEnd()
+    {
+        endTimer = null;
+        if (!focusMode) return;
+        capri.Say(EndFocus(false));
     }
 
     private string EndFocus(bool auto)
     {
+        CancelTimer();
         if (!focusMode)
-            return auto ? null : "Pas en focus mode là.";
+            return auto ? null : "You're not in focus mode.";
 
         TimeSpan elapsed = DateTime.Now - focusStart;
         int actualMinutes = (int)elapsed.TotalMinutes;
@@ -121,18 +143,18 @@ public class FocusGuard : ICapriMod
 
         focusMode = false;
 
-        string reply = "Session focus terminée. ";
+        string reply = "Focus session over. ";
         if (actualMinutes >= focusDuration)
             reply += "Full " + focusDuration + " minutes done! ";
         else
-            reply += actualMinutes + " minutes sur " + focusDuration + ". ";
+            reply += actualMinutes + " of " + focusDuration + " minutes. ";
 
         if (distractionsThisSession == 0)
-            reply += "Zéro distraction. Clean.";
+            reply += "Zero distractions. Clean.";
         else if (distractionsThisSession == 1)
-            reply += "Une distraction choppée.";
+            reply += "One distraction caught.";
         else
-            reply += distractionsThisSession + " distractions. Fais mieux.";
+            reply += distractionsThisSession + " distractions. Do better.";
 
         SaveStats();
         return reply;
@@ -141,7 +163,7 @@ public class FocusGuard : ICapriMod
     private string CheckFocus()
     {
         if (!focusMode)
-            return "Pas en focus mode. Dis 'focus mode' pour start.";
+            return "Not in focus mode. Say 'focus mode 30 minutes' to start.";
 
         TimeSpan elapsed = DateTime.Now - focusStart;
         int remaining = focusDuration - (int)elapsed.TotalMinutes;
@@ -149,11 +171,11 @@ public class FocusGuard : ICapriMod
         if (remaining <= 0)
             return EndFocus(false);
 
-        string reply = GetRemainingTime() + " restant. ";
+        string reply = GetRemainingTime() + " left. ";
         if (distractionsThisSession == 0)
-            reply += "Aucune distraction pour l'instant. Continue.";
+            reply += "No distractions so far. Keep going.";
         else
-            reply += distractionsThisSession + " distraction" + (distractionsThisSession == 1 ? "" : "s") + " choppée" + (distractionsThisSession == 1 ? "" : "s") + ".";
+            reply += distractionsThisSession + " distraction" + (distractionsThisSession == 1 ? "" : "s") + " caught so far.";
 
         return reply;
     }
@@ -161,17 +183,17 @@ public class FocusGuard : ICapriMod
     private string ShowStats()
     {
         if (totalFocusSessions == 0)
-            return "Pas de sessions focus. Dis 'focus mode' pour tracker.";
+            return "No focus sessions yet. Say 'focus mode 30 minutes' to start one.";
 
         StringBuilder reply = new StringBuilder();
-        reply.Append(totalFocusSessions).Append(" session").Append(totalFocusSessions == 1 ? "" : "s").Append(" focus, ");
+        reply.Append(totalFocusSessions).Append(" focus session").Append(totalFocusSessions == 1 ? "" : "s").Append(", ");
         reply.Append(totalFocusMinutes).Append(" minutes total. ");
-        reply.Append(totalDistractions).Append(" distraction").Append(totalDistractions == 1 ? "" : "s"). Append(". ");
+        reply.Append(totalDistractions).Append(" distraction").Append(totalDistractions == 1 ? "" : "s").Append(". ");
 
         if (totalFocusMinutes > 0)
         {
             double ratio = (double)totalDistractions / (totalFocusMinutes / 60.0);
-            reply.Append("Soit ").Append(ratio.ToString("F1")).Append(" distractions par heure.");
+            reply.Append("That is ").Append(ratio.ToString("F1")).Append(" distractions per hour.");
         }
 
         return reply.ToString();
@@ -179,30 +201,18 @@ public class FocusGuard : ICapriMod
 
     private void CheckDistraction(string said)
     {
-        // Check for distraction keywords
         string lower = said.ToLowerInvariant();
         bool distracted = lower.Contains("youtube") || lower.Contains("twitter") || lower.Contains("reddit") ||
-                         lower.Contains("instagram") || lower.Contains("tiktok") || lower.Contains("facebook") ||
-                         lower.Contains("game") || lower.Contains("video") || lower.Contains("stream");
+                         lower.Contains("instagram") || lower.Contains("tiktok") || lower.Contains("facebook");
 
         if (distracted)
         {
             TimeSpan sinceWarning = DateTime.Now - lastWarning;
-            if (sinceWarning.TotalMinutes >= 2) // Don't spam warnings
+            if (sinceWarning.TotalMinutes >= 2) // Don't count the same burst twice
             {
                 distractionsThisSession++;
                 totalDistractions++;
                 lastWarning = DateTime.Now;
-
-                string[] warnings = {
-                    "Yo, focus mode tu te rappelles?",
-                    "C'est une distraction ça. Retourne bosser.",
-                    "Focus. Tu m'as demandé de te surveiller.",
-                    "Je t'ai choppé. Reviens au boulot.",
-                    "Non. C'est focus time. T'as setup ça toi-même."
-                };
-
-                capri.Say(warnings[distractionsThisSession % warnings.Length]);
             }
         }
     }
@@ -211,6 +221,7 @@ public class FocusGuard : ICapriMod
     {
         TimeSpan elapsed = DateTime.Now - focusStart;
         int remaining = focusDuration - (int)elapsed.TotalMinutes;
+        if (remaining < 0) remaining = 0;
         return remaining + (remaining == 1 ? " minute" : " minutes");
     }
 

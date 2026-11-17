@@ -1,9 +1,9 @@
 // capri-mod: 1
 // id: screen-context-memory
-// name: Screen Context Memory
-// version: 1.0.0
-// author: flaque
-// description: Se souvient de ce sur quoi tu bosses entre les sessions. "context save", "what was I doing", "context stats".
+// name: Work Context Memory
+// version: 1.1.0
+// author: flaqueeee
+// description: Saves named work contexts and tracks time per project between sessions. Say "context save", "context recall", "last context", "context stats" or "context list".
 
 using System;
 using System.Collections.Generic;
@@ -13,15 +13,15 @@ using System.Text;
 using System.Text.RegularExpressions;
 using CapriDesktop;
 
-public class ScreenContextMemory : ICapriMod
+public class WorkContextMemory : ICapriMod
 {
     private const RegexOptions Plain = RegexOptions.IgnoreCase | RegexOptions.CultureInvariant;
     private static readonly Regex Wake = new Regex(@"^\s*(?:(?:hey|hi|ok|okay|yo|oi)[\s,]+)?capri\b[\s,.:;!?-]*|[\s,]+capri[\s.!?]*$", Plain);
-    private static readonly Regex SaveContext = new Regex(@"\bcontext\s+save\b|\bsave\s+context\b|\bremember\s+this\b", Plain);
-    private static readonly Regex RecallContext = new Regex(@"\bwhat\s+was\s+i\s+(?:doing|working\s+on)\b|\bcontext\s+recall\b|\blast\s+(?:context|session)\b", Plain);
-    private static readonly Regex ContextStats = new Regex(@"\bcontext\s+stats?\b|\bmy\s+(?:work\s+)?sessions?\b|\btime\s+(?:spent|tracked)\b", Plain);
-    private static readonly Regex ContextList = new Regex(@"\bcontext\s+list\b|\bshow\s+contexts?\b|\blist\s+(?:my\s+)?projects?\b", Plain);
-    private static readonly Regex ContextHelp = new Regex(@"\bcontext\s+help\b|\bhelp\s+context\b", Plain);
+    private static readonly Regex SaveContext = new Regex(@"\bcontext\s+save\b", Plain);
+    private static readonly Regex RecallContext = new Regex(@"\bcontext\s+recall\b|\blast\s+context\b", Plain);
+    private static readonly Regex ContextStats = new Regex(@"\bcontext\s+stats?\b", Plain);
+    private static readonly Regex ContextList = new Regex(@"\bcontext\s+list\b", Plain);
+    private static readonly Regex ContextHelp = new Regex(@"\bcontext\s+help\b", Plain);
 
     private ICapriHost capri;
     private string dataFolder;
@@ -31,7 +31,7 @@ public class ScreenContextMemory : ICapriMod
     private class ContextSession
     {
         public string Name;
-        public string LastScreen;
+        public string LastSaved;
         public DateTime FirstSeen;
         public DateTime LastSeen;
         public int TotalMinutes;
@@ -54,13 +54,13 @@ public class ScreenContextMemory : ICapriMod
             Directory.CreateDirectory(dataFolder);
         
         LoadSessions();
-        capri.Log("Screen Context Memory started.");
+        capri.Log("Work Context Memory started.");
     }
 
     public void Stop()
     {
         SaveSessions();
-        capri.Log("Screen Context Memory stopped.");
+        capri.Log("Work Context Memory stopped.");
     }
 
     public bool Heard(string words)
@@ -78,7 +78,7 @@ public class ScreenContextMemory : ICapriMod
     private string Answer(string said)
     {
         if (ContextHelp.IsMatch(said))
-            return "Context commands: 'context save' pour sauvegarder maintenant, 'what was I doing' pour te rappeler, 'context stats' pour voir ton temps, 'context list' pour tous tes projets.";
+            return "Context commands: 'context save [name]' to save your current work, 'context recall' or 'last context' to see what you last saved, 'context stats' for time per project, 'context list' for recent contexts.";
 
         if (SaveContext.IsMatch(said))
             return SaveCurrentContext(said);
@@ -123,18 +123,18 @@ public class ScreenContextMemory : ICapriMod
                 session.LastSeen = DateTime.Now;
             }
 
-            session.LastScreen = "Saved at " + DateTime.Now.ToString("HH:mm dd/MM");
+            session.LastSaved = "Saved at " + DateTime.Now.ToString("HH:mm dd/MM");
             session.Notes.Add(description);
 
             File.WriteAllText(currentContextFile, contextName);
             SaveSessions();
 
-            return "Context saved as '" + contextName + "'. Je retiens ça.";
+            return "Context saved as '" + contextName + "'. I will remember it.";
         }
         catch (Exception ex)
         {
             capri.Log("Error saving context: " + ex.Message);
-            return "Bug de sauvegarde. Retry.";
+            return "Could not save the context. Try again.";
         }
     }
 
@@ -143,7 +143,7 @@ public class ScreenContextMemory : ICapriMod
         try
         {
             if (sessions.Count == 0)
-                return "Pas de contexts sauvés. Dis 'context save' quand tu veux que je retienne un truc.";
+                return "No contexts saved yet. Say 'context save' followed by a name when you want me to remember what you are working on.";
 
             string currentName = null;
             if (File.Exists(currentContextFile))
@@ -161,35 +161,35 @@ public class ScreenContextMemory : ICapriMod
             }
 
             if (last == null)
-                return "Rien trouvé en récent.";
+                return "Nothing recent found.";
 
             StringBuilder reply = new StringBuilder();
-            reply.Append("Dernier context: ").Append(last.Name).Append(". ");
+            reply.Append("Last context: ").Append(last.Name).Append(". ");
             
             TimeSpan ago = DateTime.Now - last.LastSeen;
             if (ago.TotalMinutes < 60)
-                reply.Append("Il y a ").Append((int)ago.TotalMinutes).Append(" minutes. ");
+                reply.Append("About ").Append((int)ago.TotalMinutes).Append(" minutes ago. ");
             else if (ago.TotalHours < 24)
-                reply.Append("Il y a ").Append((int)ago.TotalHours).Append(" heures. ");
+                reply.Append("About ").Append((int)ago.TotalHours).Append(" hours ago. ");
             else
-                reply.Append("Il y a ").Append((int)ago.TotalDays).Append(" jours. ");
+                reply.Append("About ").Append((int)ago.TotalDays).Append(" days ago. ");
 
             if (last.TotalMinutes > 0)
-                reply.Append("Temps total: ").Append(last.TotalMinutes).Append(" minutes.");
+                reply.Append("Total time: ").Append(last.TotalMinutes).Append(" minutes.");
 
             return reply.ToString();
         }
         catch (Exception ex)
         {
             capri.Log("Error recalling context: " + ex.Message);
-            return "Bug de mémoire. Retry.";
+            return "Could not read the saved contexts. Try again.";
         }
     }
 
     private string ShowStats()
     {
         if (sessions.Count == 0)
-            return "Pas de sessions trackées. Bosse et dis 'context save'.";
+            return "No sessions tracked yet. Say 'context save' to start one.";
 
         var sorted = sessions.Values.OrderByDescending(s => s.TotalMinutes).Take(5).ToList();
         StringBuilder reply = new StringBuilder("Top sessions: ");
@@ -201,7 +201,7 @@ public class ScreenContextMemory : ICapriMod
         }
 
         int total = sessions.Values.Sum(s => s.TotalMinutes);
-        reply.Append(". Total tracké: ").Append(total).Append(" minutes.");
+        reply.Append(". Total tracked: ").Append(total).Append(" minutes.");
 
         return reply.ToString();
     }
@@ -209,10 +209,10 @@ public class ScreenContextMemory : ICapriMod
     private string ListContexts()
     {
         if (sessions.Count == 0)
-            return "Aucun context sauvé.";
+            return "No contexts saved.";
 
         var recent = sessions.Values.OrderByDescending(s => s.LastSeen).Take(8).ToList();
-        StringBuilder reply = new StringBuilder("Contexts récents: ");
+        StringBuilder reply = new StringBuilder("Recent contexts: ");
 
         for (int i = 0; i < recent.Count; i++)
         {
@@ -263,7 +263,7 @@ public class ScreenContextMemory : ICapriMod
                     else if (line.StartsWith("MINUTES:"))
                         int.TryParse(line.Substring(8), out current.TotalMinutes);
                     else if (line.StartsWith("SCREEN:"))
-                        current.LastScreen = line.Substring(7);
+                        current.LastSaved = line.Substring(7);
                     else if (line.StartsWith("NOTE:"))
                         current.Notes.Add(line.Substring(5));
                 }
@@ -288,8 +288,8 @@ public class ScreenContextMemory : ICapriMod
                 content.AppendLine("FIRST:" + session.FirstSeen.ToString("o"));
                 content.AppendLine("LAST:" + session.LastSeen.ToString("o"));
                 content.AppendLine("MINUTES:" + session.TotalMinutes);
-                if (!string.IsNullOrEmpty(session.LastScreen))
-                    content.AppendLine("SCREEN:" + session.LastScreen);
+                if (!string.IsNullOrEmpty(session.LastSaved))
+                    content.AppendLine("SCREEN:" + session.LastSaved);
                 foreach (string note in session.Notes)
                     content.AppendLine("NOTE:" + note);
                 content.AppendLine();
