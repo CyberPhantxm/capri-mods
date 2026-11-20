@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "commit": "7d694ae096e05b89164ea3fd57ddacc60f1d971e",
+  "commit": "e378fa00a491ee09ff8c3afcbd87f5e723837676",
   "tree": [
     {"path": "mods/MK001-dice-roller/MK001-dice-roller.capri-code", "type": "blob", "sha": "d2fc7cd88cfa7b85789e78741371f7191735bc9f", "size": 249409},
     {"path": "mods/MK001-dice-roller/README.md", "type": "blob", "sha": "aefd508a141369224a2388269f57346f63222ca9", "size": 1996},
@@ -323,6 +323,9 @@
     {"path": "mods/y2k-chrome/README.md", "type": "blob", "sha": "3f103c6dc58a12e9adb4dd9385ac1d9c2a4f1309", "size": 751},
     {"path": "mods/y2k-chrome/preview.png", "type": "blob", "sha": "65d55a66e9349fae75306757e1bd6a97179618f5", "size": 945159},
     {"path": "mods/y2k-chrome/y2k-chrome.capri-skin", "type": "blob", "sha": "25553904f96f9cfbb9f890263e236e68dd6a66ce", "size": 13513510},
+    {"path": "mods/yandere-max/README.md", "type": "blob", "sha": "968ccb6f8c49e2673cca15abbd2f3244539badb4", "size": 242},
+    {"path": "mods/yandere-max/preview.png", "type": "blob", "sha": "46d257bbf54c3ff9118bd11d5eaba9a235d1da84", "size": 274992},
+    {"path": "mods/yandere-max/yandere-max.capri-code", "type": "blob", "sha": "525b16aa6836f6f8b3901beeb3712ab61f8ca6cc", "size": 8382},
     {"path": "mods/yuno-tone-presets/README.md", "type": "blob", "sha": "7d3faad8bcbd809a13c93331e63a4ab3cc8d1b0d", "size": 881},
     {"path": "mods/yuno-tone-presets/preview.png", "type": "blob", "sha": "41cf2e7280008676bd5c9ccdd7918cf99de9cc88", "size": 23579},
     {"path": "mods/yuno-tone-presets/yuno-tone-presets.capri-code", "type": "blob", "sha": "4039736e694674d6f22e84a45fad28c503c9f829", "size": 2024}
