@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "commit": "8f320ba953bfe2f0ed94fc0fb1cacb4f0c99dc4d",
+  "commit": "3c6e106f26dcd082d5e2a201f98e55b0b8292ad2",
   "tree": [
     {"path": "mods/MK001-dice-roller/MK001-dice-roller.capri-code", "type": "blob", "sha": "d2fc7cd88cfa7b85789e78741371f7191735bc9f", "size": 249409},
     {"path": "mods/MK001-dice-roller/README.md", "type": "blob", "sha": "aefd508a141369224a2388269f57346f63222ca9", "size": 1996},
