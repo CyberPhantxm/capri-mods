@@ -68,6 +68,8 @@ Turn on **Message via Discord in the browser** in Settings > Capri features. Cap
 
 She uses the Discord tab you already have open, and picks the closest name in your direct messages. If nobody there matches, she tries Discord's search and stops if its top result doesn't match the name.
 
+**Read new Discord messages** (off until you turn it on) keeps Discord open in a hidden tab, tells you who messaged you directly, and reads the message out loud on your yes.
+
 Most of these also work in Capri Browser's 22 other languages (Spanish, French, German, Japanese, Korean and more).
 
 ## Ad blocker
@@ -95,7 +97,7 @@ If she still can't do a step she tells you which, and the job's card says so. St
 
 - **Noted**: notes as a chat with yourself. Leave a note in the box at the bottom (Enter sends), paste or attach pictures and files, add the page's link, and make your own Noted chats (Capri only uses yours and asks "Should I add it to Shopping notes?"). Right-click a card to edit, copy, move or delete it.
 - **Bookmarks**: the star on the sidebar (Ctrl+Shift+B), with folders, search, drag and drop, and Import from Opera GX, Opera, Chrome, Edge, Brave or Vivaldi (read from their file on your PC only when you press it). The star in the address box bookmarks the page (Ctrl+Shift+D).
-- **Extensions**: the puzzle next to Summarise. Add Chrome-style extensions you downloaded yourself (a folder, .zip or .crx), turn them on or off, open their popup or options, or remove them. Capri Browser never downloads extensions for you.
+- **Extensions**: the puzzle next to Summarise. Add Chrome-style extensions you downloaded yourself (a folder, .zip or .crx), turn them on or off, open their popup or options, or remove them. On a Chrome Web Store page, **Add to Capri Browser** downloads that extension from Google (clients2.google.com) and installs it.
 - **Screenshots**: the camera next to the puzzle. Pick an area (Ctrl+Shift+X), what's on screen, or the whole page. Each one is saved in Pictures\Capri Browser, copied, and can go into Noted.
 - Smoother: side panels slide, tabs grow in and shrink away, glide into place when moved and pop when picked, a red line glides to the tab you pick, menus fade in
 - **Game mode** (bottom of the left sidebar): other tabs snooze, every page uses Edge's low memory level and the engine runs at idle priority, so your game gets the PC. Click it again for normal.
@@ -128,8 +130,9 @@ The mod itself (not the pages you visit) contacts:
 | raw.githubusercontent.com ([tob7as/Browser-addons](https://github.com/tob7as/Browser-addons)) | The ad blocker lists, voice commands in other languages, games, game lists, languages, the settings, Speed Dial, results, Games and History looks, video-site, search-engine and achievement lists, help, the Welcome page and update notes. The Welcome page offers **Download browser** (all at once, with progress) or **Download quietly in the background**; until then the browser uses small built-in English defaults |
 | en.wikipedia.org (or your language's Wikipedia), search.brave.com, www.bing.com, html.duckduckgo.com | Answers for "look up ..." and "research this", Wiki Race, finding videos and games, and picture searches |
 | www.google.com/s2/favicons, github.githubassets.com, and each Speed Dial site | Little site icons for Speed Dial and the sidebar |
-| capri-browser.tobiasprojects77.workers.dev (tob7as's own Cloudflare worker) | Gets the weekly leaderboards and the Featured boxes on the Games page (plain text, shown escaped, and not pinned, since they change without a mod update). Only if you pick a leaderboard name: that name, then your weekly game and browsing counts every 12 hours, and your place when you look it up. And whatever you type into the bug and idea box when you press Send. Nothing else; your IP address is never stored (only a salted hash that changes daily, for rate limits), and Featured can be turned off in Settings |
+| capri-browser.tobiasprojects77.workers.dev (tob7as's own Cloudflare worker) | Gets the weekly leaderboards and the Featured boxes on the Games page (plain text, shown escaped, and not pinned, since they change without a mod update). Only if you pick a leaderboard name: that name, then your weekly game and browsing counts every 12 hours, and your place when you look it up. And whatever you type into the bug and idea box when you press Send, with the mod version, your Windows version and a random ID. Nothing else; your IP address is never stored (only a salted hash that changes daily, for rate limits), and Featured can be turned off in Settings |
 | api.nuget.org | Microsoft's WebView2 package, downloaded once only if you set up video playback |
+| clients2.google.com | The extension you press **Add to Capri Browser** on, from its Chrome Web Store page. It isn't pinned, since you pick it |
 
 Some games you open from the Games page fetch from graphql.anilist.co, en.wikipedia.org and www.gamerpower.com.
 
