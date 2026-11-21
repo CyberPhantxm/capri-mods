@@ -3,9 +3,7 @@
 Tired of the toolbar overlapping Capri or lingering on screen? Take full control over Capri's HUD layout and behavior!
 
 **How to use:** Hover over Capri to bring up her toolbar—it automatically positions itself clear of her sprite, the taskbar, and screen edges. 
-
 Click the eye icon on the right to toggle Hologram mode, click the compact arrow handle to smoothly collapse or expand the toolbar, or click `TYPE` to open and close the input box. 
-
 Clicking anywhere outside dismisses the toolbar immediately.
 
 | Feature | Behavior |
