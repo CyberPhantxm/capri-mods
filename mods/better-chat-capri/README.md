@@ -13,7 +13,7 @@ Clicking anywhere outside dismisses the toolbar immediately.
 | Feature | Behavior |
 |---|---|
 | Non-Overlap Layout | Measures Capri's actual sprite bounds so the toolbar never overlaps Capri, the taskbar, or screen edges—shifting cleanly to the left or right when she is near the bottom of the screen. |
-| Auto-Hide & Instant Dismiss | Automatically hides after **2.0s** (normal) or **1.5s** (Hologram mode) once the cursor leaves the toolbar, and dismisses immediately when clicking outside. |
+| Auto-Hide & Instant Dismiss | Automatically hides after **2.0s** (normal) or **1.5s** (Hologram mode) once the cursor leaves the toolbar, and dismisses immediately when clicking outside (closing the right-click menu as well). |
 | Hologram Eye Button | Adds a native-styled eye button on the right side of the toolbar to toggle Hologram mode in one click, while keeping `TYPE`, `TALK`, and `MIC` fully interactive in Hologram mode. |
 | Animated Minimize-to-Tray | Adds a compact tray handle that smoothly slides and collapses all toolbar buttons (including third-party mod buttons) into a discreet arrow, saving your preference automatically between sessions. |
 | Exclusive `TYPE` Toggle | Click `TYPE` to open the input box and click `TYPE` again to close it and preventing unintentional closes when clicking other toolbar buttons. |
