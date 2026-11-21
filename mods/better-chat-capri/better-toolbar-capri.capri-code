@@ -125,7 +125,7 @@ public class CapriBar : ICapriMod
     ICapriHost capri;
     Type overlayType;
     Form window, pill, button, trayButton, box, typer;
-    Control mainframe, hologramControl;
+    Control mainframe, hologramControl, menu;
     FieldInfo pillUntil, pillCentre, pillScale, pillMotion, pillHoverField, mainframeField, bodySurfaceField, layerField, clickThroughField, preferencesField, hologramPrefField, draggingField;
     PropertyInfo chatting, hologramState, hologramChecked, surfaceImageProp, overlayImageProp;
     MethodInfo talkScale, present, plate, pillPlaceMethod, pillRedrawMethod, pillPressMethod, pillPartAtMethod;
@@ -197,6 +197,8 @@ public class CapriBar : ICapriMod
             box = boxField == null ? null : boxField.GetValue(window) as Form;
             FieldInfo typerField = wt.GetField("typer", Any);
             typer = typerField == null ? null : typerField.GetValue(window) as Form;
+            FieldInfo menuField = wt.GetField("menu", Any);
+            menu = menuField == null ? null : menuField.GetValue(window) as Control;
 
             pillPlaceMethod = pt.GetMethod("Place", Any, null, new[] { typeof(Point), typeof(float) }, null);
             pillRedrawMethod = pt.GetMethod("Redraw", Any, null, Type.EmptyTypes, null);
@@ -995,6 +997,34 @@ public class CapriBar : ICapriMod
         return null;
     }
 
+    bool IsPointInMenu(Control m, Point p)
+    {
+        if (m == null || m.IsDisposed || !m.Visible) return false;
+        Rect r;
+        Rectangle bounds = m.IsHandleCreated && GetWindowRect(m.Handle, out r)
+            ? Rectangle.FromLTRB(r.Left, r.Top, r.Right, r.Bottom) : m.Bounds;
+        if (bounds.Contains(p)) return true;
+        ToolStrip ts = m as ToolStrip;
+        if (ts != null)
+        {
+            foreach (ToolStripItem item in ts.Items)
+            {
+                ToolStripDropDownItem dd = item as ToolStripDropDownItem;
+                if (dd != null && dd.HasDropDownItems && dd.DropDown.Visible && IsPointInMenu(dd.DropDown, p))
+                    return true;
+            }
+        }
+        return false;
+    }
+
+    void CloseMenu()
+    {
+        if (menu == null || menu.IsDisposed || !menu.Visible) return;
+        ToolStripDropDown dd = menu as ToolStripDropDown;
+        if (dd != null) dd.Close();
+        else menu.Hide();
+    }
+
     void Tick()
     {
         if (window == null || window.IsDisposed || pill == null || pill.IsDisposed || button == null || button.IsDisposed || trayButton == null || trayButton.IsDisposed) return;
@@ -1015,10 +1045,13 @@ public class CapriBar : ICapriMod
 
         short lState = GetAsyncKeyState(VkLButton), rState = GetAsyncKeyState(VkRButton);
         bool lDown = (lState & 0x8000) != 0, rDown = (rState & 0x8000) != 0;
-        bool lPressed = lDown && !wasLDown, lReleased = !lDown && wasLDown;
-        bool clicked = lPressed || (rDown && !wasRDown) || (wasBarVisible && (((lState & 0x0001) != 0) || ((rState & 0x0001) != 0)));
+        bool lPressed = lDown && !wasLDown, lReleased = !lDown && wasLDown, rPressed = rDown && !wasRDown;
+        bool clicked = lPressed || rPressed || (wasBarVisible && (((lState & 0x0001) != 0) || ((rState & 0x0001) != 0)));
         wasLDown = lDown;
         wasRDown = rDown;
+
+        if (menu != null && !menu.IsDisposed && menu.Visible && (lPressed || (rPressed && !hoverCapri)) && !IsPointInMenu(menu, cursor))
+            CloseMenu();
 
         if (IsDragging())
         {
