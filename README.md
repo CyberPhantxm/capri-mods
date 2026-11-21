@@ -9,6 +9,7 @@ Every mod is checked for malware before it goes up here.
 - **Code mods** (`.capri-code`): C# that Capri compiles and runs. Code mods can do anything on your PC, so Capri asks before running one.
 - **Skins** (`.capri-skin`): a zip of pictures that replace her art.
 - **Skills** (`.capri-skill`): know-how for a game, like what to build and when. Capri follows it whenever she plays that game. Skills need Capri 0.8.4 or newer.
+- **Companion packs** (`.capri-companion`): a companion of your own, with its own name, personality, voice and art, on instead of Capri until you turn it off. They hold no code, and her safety lines always apply. Companion packs need the Capri release after 0.9.4.
 - **Plug-ins** (`.capri-plugin`): a zip in Claude's plug-in layout, with MCP servers that give her tools and `SKILL.md` skills. Capri shows what its servers run and asks before they start. Plug-ins need Capri 0.9.6 or newer, and Browse mods lists them from the update after that.
 
 ## Using a mod

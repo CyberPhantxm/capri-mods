@@ -26,6 +26,7 @@ kinds = {'Settings mod (.capri-mod)': ('.capri-mod', 'settings mod', ('.zip', '.
          'Code mod (.capri-code)': ('.capri-code', 'code mod', ('.zip', '.cs', '.txt'), 2 * mb),
          'Skin (.capri-skin)': ('.capri-skin', 'skin', ('.zip',), 96 * mb),
          'Skill (.capri-skill)': ('.capri-skill', 'skill', ('.zip', '.txt', '.md'), 2 * mb),
+         'Companion pack (.capri-companion)': ('.capri-companion', 'companion pack', ('.zip',), 96 * mb),
          'Plug-in (.capri-plugin)': ('.capri-plugin', 'plug-in', ('.zip',), 1 * mb)}
 mod_types = tuple(kind[0] for kind in kinds.values())
 kind_words = {kind[1] for kind in kinds.values()}
@@ -241,6 +242,8 @@ def unzip(data, want, cap, problems):
             names = [entry.filename for entry in entries]
             if want == '.capri-skin' and 'skin.json' in names and not any(n.lower().endswith(want) for n in names):
                 return data  # a renamed .capri-skin is already the skin, so it's kept byte for byte
+            if want == '.capri-companion' and 'companion.json' in names and not any(n.lower().endswith(want) for n in names):
+                return data
             if (want == '.capri-plugin' and not any(n.lower().endswith(want) for n in names)
                     and any(n.rsplit('/', 1)[-1].lower() in plugin_parts for n in names)):
                 if len(data) > cap:
@@ -276,6 +279,14 @@ def content_problem(data, want):
         except Exception:
             return "isn't a skin. A skin is a zip of her pictures and a `skin.json`."
         return None if data[:4] == b'PK\x03\x04' and 'skin.json' in names else "has no `skin.json` at the top, so it isn't a skin."
+    if want == '.capri-companion':
+        try:
+            with zipfile.ZipFile(io.BytesIO(data)) as pack:
+                names = pack.namelist()
+        except Exception:
+            return "isn't a companion pack. A companion pack is a zip with a `companion.json` and a `personality.md`."
+        missing = [name for name in ('companion.json', 'personality.md') if name not in names]
+        return None if data[:4] == b'PK\x03\x04' and not missing else 'has no {} at the top, so it isn\'t a companion pack.'.format(' or '.join('`' + name + '`' for name in missing) or 'zip header')
     if want == '.capri-plugin':
         try:
             with zipfile.ZipFile(io.BytesIO(data)) as plugin:
