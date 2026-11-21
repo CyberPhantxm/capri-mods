@@ -1,0 +1,1313 @@
+// capri-mod: 1
+// id: better-toolbar-capri
+// name: Better Toolbar // Capri
+// version: 1.0.0
+// author: CyberPhantxm
+// description: Auto-hiding bar (2s), click-outside dismiss, TYPE toggle, smart non-overlap layout for bar mods, animated tray toggle, native glitch sync, and Hologram eye button.
+// requires: api 3
+
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
+using System.Reflection;
+using System.Runtime.InteropServices;
+using System.Windows.Forms;
+using CapriDesktop;
+
+public class CapriBar : ICapriMod
+{
+    const BindingFlags Any = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static;
+    const int Side = 40, TrayWidth = 22, TrayHeight = 24, Gap = 4, EdgeMargin = 4, CapriGap = 3;
+    const float IconScale = 0.9f;
+    const double NormalTimeout = 2.0, HologramTimeout = 1.5, AnimDuration = 0.24, GlitchStep = 0.045;
+    const int TearFrames = 4, VkLButton = 0x01, VkRButton = 0x02, GwlExStyle = -20, WsExTransparent = 0x20, SwShowNoActivate = 4;
+    const uint SwpNoSize = 0x0001, SwpNoMove = 0x0002, SwpNoZOrder = 0x0004, SwpNoActivate = 0x0010, SwpShowWindow = 0x0040, SwpHideWindow = 0x0080;
+
+    static readonly Color PlateFill = Color.FromArgb(246, 9, 11, 15);
+
+    [StructLayout(LayoutKind.Sequential)] struct Rect { public int Left, Top, Right, Bottom; }
+    [StructLayout(LayoutKind.Sequential)] struct WindowPos { public IntPtr hwnd, hwndInsertAfter; public int x, y, cx, cy; public uint flags; }
+
+    [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr window, out Rect rect);
+    [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr window);
+    [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+    [DllImport("user32.dll")] static extern short GetAsyncKeyState(int vKey);
+    [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint uFlags);
+    [DllImport("user32.dll")] static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+    [DllImport("user32.dll")] static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
+
+    sealed class PillHook : NativeWindow
+    {
+        public Func<bool> ShouldSuppress, ShouldKeepVisible, BeginNativeClick;
+        public Func<Point, Point?> AdjustLocation;
+        public Func<int, bool> SuppressLeftUp;
+        public Action<int> OnLeftDown;
+        public Action<bool> EndNativeClick;
+        public Action Moved;
+
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == 0x0201)
+            {
+                if (OnLeftDown != null) OnLeftDown((short)(m.LParam.ToInt64() & 0xFFFF));
+                base.WndProc(ref m);
+                return;
+            }
+            if (m.Msg == 0x0202)
+            {
+                if (SuppressLeftUp != null && SuppressLeftUp((short)(m.LParam.ToInt64() & 0xFFFF))) return;
+                bool restore = BeginNativeClick != null && BeginNativeClick();
+                try { base.WndProc(ref m); }
+                finally { if (EndNativeClick != null) EndNativeClick(restore); }
+                return;
+            }
+            if (m.Msg == 0x0046)
+            {
+                WindowPos wp = (WindowPos)Marshal.PtrToStructure(m.LParam, typeof(WindowPos));
+                bool changed = false;
+                bool suppress = ShouldSuppress != null && ShouldSuppress();
+                if (suppress && (wp.flags & SwpShowWindow) != 0)
+                {
+                    wp.flags = (wp.flags & ~SwpShowWindow) | SwpHideWindow;
+                    changed = true;
+                }
+                else if (!suppress && ShouldKeepVisible != null && ShouldKeepVisible() && (wp.flags & SwpHideWindow) != 0)
+                {
+                    wp.flags &= ~SwpHideWindow;
+                    changed = true;
+                }
+                if (!suppress && (wp.flags & SwpNoMove) == 0 && AdjustLocation != null)
+                {
+                    Point? adj = AdjustLocation(new Point(wp.x, wp.y));
+                    if (adj.HasValue && (adj.Value.X != wp.x || adj.Value.Y != wp.y))
+                    {
+                        wp.x = adj.Value.X;
+                        wp.y = adj.Value.Y;
+                        changed = true;
+                    }
+                }
+                if (changed) Marshal.StructureToPtr(wp, m.LParam, false);
+            }
+            base.WndProc(ref m);
+            if (m.Msg == 0x0047 && Moved != null) Moved();
+        }
+    }
+
+    sealed class StillHook : NativeWindow
+    {
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == 0x02E0) return;
+            base.WndProc(ref m);
+        }
+    }
+
+    sealed class TyperHook : NativeWindow
+    {
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == 0x0006 && (m.WParam.ToInt64() & 0xFFFF) == 0) return;
+            base.WndProc(ref m);
+        }
+    }
+
+    struct BarLayout
+    {
+        public Point PillLocation, PillCentre;
+        public Rectangle BarBounds, EyeBounds, TrayBounds;
+        public int ClipRight, ChevronDir;
+    }
+
+    ICapriHost capri;
+    Type overlayType;
+    Form window, pill, button, trayButton, box, typer;
+    Control mainframe, hologramControl;
+    FieldInfo pillUntil, pillCentre, pillScale, pillMotion, pillHoverField, mainframeField, bodySurfaceField, layerField, clickThroughField, preferencesField, hologramPrefField, draggingField;
+    PropertyInfo chatting, hologramState, hologramChecked, surfaceImageProp, overlayImageProp;
+    MethodInfo talkScale, present, plate, pillPlaceMethod, pillRedrawMethod, pillPressMethod, pillPartAtMethod;
+    Action<IntPtr, Bitmap, Point> originalLayer;
+    readonly Dictionary<Form, Action<IntPtr, Bitmap, Point>> siblingLayers = new Dictionary<Form, Action<IntPtr, Bitmap, Point>>();
+    readonly Random rng = new Random();
+    Stopwatch clock;
+    Color pink, cyan, red, ink, dim;
+    PillHook watch;
+    StillHook still, trayStill;
+    TyperHook typerHook;
+    System.Windows.Forms.Timer timer;
+
+    bool adjusting, suppressed, barActive, pillShownInActive, wasBarVisible, wasHoverCapri, wasLDown, wasRDown;
+    bool typerWasOpen, suppressTypeUp, typeWasOpenOnPress, minimized, glitchDirty;
+    int pillDownPart, currentClipRight = int.MaxValue, glitchTear, glitchSeed;
+    float animProgress = 1f, animFrom = 1f, animTo = 1f, lastScale = 1f;
+    double deadline, lastNativePillClickAt = -10, typerClosedAt = -10, animStart, glitchNextAt, lastSpriteScan = -10;
+    BarLayout lastLayout;
+    Rectangle cachedLocalSprite;
+    Size cachedCanvasSize;
+    byte[] scanBuffer;
+
+    bool eyeHover, drawnHover, drawnHologram, trayHover, drawnTrayHover, drawnTrayMinimized;
+    float drawnScale = -1, drawnTrayScale = -1;
+    int drawnEyeClip = -1, drawnEyeTear = -1, drawnTrayDir, drawnTrayTear = -1;
+
+    static Rectangle Real(Form form)
+    {
+        Rect r;
+        return form.IsHandleCreated && GetWindowRect(form.Handle, out r) ? Rectangle.FromLTRB(r.Left, r.Top, r.Right, r.Bottom) : form.Bounds;
+    }
+
+    public void Start(ICapriHost host)
+    {
+        capri = host;
+        minimized = host.Store.Flag("bar_minimized", false);
+        animProgress = animFrom = animTo = minimized ? 0f : 1f;
+
+        try
+        {
+            window = (Form)host.GetType().GetField("capri", Any).GetValue(host);
+            Assembly app = typeof(ICapriMod).Assembly;
+            Type wt = window.GetType();
+            Type pt = app.GetType("CapriDesktop.TalkPill");
+            Type look = app.GetType("CapriDesktop.Look");
+            overlayType = app.GetType("CapriDesktop.Overlay");
+
+            pill = (Form)Field(wt, "pill").GetValue(window);
+            pillUntil = Field(wt, "pillUntil");
+            clock = (Stopwatch)Field(wt, "clock").GetValue(window);
+            talkScale = Need(wt.GetMethod("TalkScale", Any, null, Type.EmptyTypes, null), "TalkScale");
+            plate = Need(pt.GetMethod("Plate", Any), "TalkPill.Plate");
+            pillCentre = Field(pt, "centre");
+            pillScale = Field(pt, "scale");
+            pillMotion = pt.GetField("Motion", Any);
+            pillHoverField = pt.GetField("hover", Any);
+            chatting = Need(pt.GetProperty("Chatting", Any), "TalkPill.Chatting");
+            hologramState = wt.GetProperty("HologramOn", Any);
+            mainframeField = wt.GetField("mainframe", Any);
+            bodySurfaceField = wt.GetField("bodySurface", Any);
+            preferencesField = wt.GetField("preferences", Any);
+            draggingField = wt.GetField("dragging", Any);
+            layerField = overlayType.GetField("Layer", Any);
+            clickThroughField = overlayType.GetField("ClickThrough", Any);
+            overlayImageProp = overlayType.GetProperty("Image", Any);
+
+            FieldInfo boxField = wt.GetField("box", Any);
+            box = boxField == null ? null : boxField.GetValue(window) as Form;
+            FieldInfo typerField = wt.GetField("typer", Any);
+            typer = typerField == null ? null : typerField.GetValue(window) as Form;
+
+            pillPlaceMethod = pt.GetMethod("Place", Any, null, new[] { typeof(Point), typeof(float) }, null);
+            pillRedrawMethod = pt.GetMethod("Redraw", Any, null, Type.EmptyTypes, null);
+            pillPressMethod = pt.GetMethod("Press", Any, null, new[] { typeof(int) }, null);
+            pillPartAtMethod = pt.GetMethod("PartAt", Any, null, new[] { typeof(int), typeof(float), typeof(bool) }, null);
+            ResolveHologramControl();
+
+            pink = (Color)Field(look, "Pink").GetValue(null);
+            cyan = (Color)Field(look, "Cyan").GetValue(null);
+            red = (Color)Field(look, "Red").GetValue(null);
+            ink = (Color)Field(look, "Ink").GetValue(null);
+            dim = (Color)Field(look, "Dim").GetValue(null);
+            present = Need(overlayType.GetMethod("Present", Any), "Overlay.Present");
+            Cursor pointer = (Cursor)look.GetProperty("Pointer", Any).GetValue(null, null);
+
+            OnUi(delegate
+            {
+                HookPillLayer();
+                if (typer != null)
+                {
+                    typerWasOpen = typer.Visible;
+                    typer.VisibleChanged += OnTyperVisibleChanged;
+                    typerHook = new TyperHook();
+                    typerHook.AssignHandle(typer.Handle);
+                }
+
+                button = CreateOverlay("Hologram Mode", pointer, ToggleHologram, out still);
+                trayButton = CreateOverlay("Capri Bar Tray", pointer, ToggleMinimize, out trayStill);
+
+                timer = new System.Windows.Forms.Timer { Interval = 15 };
+                timer.Tick += delegate { Tick(); };
+                timer.Start();
+            });
+        }
+        catch (Exception error)
+        {
+            host.Log("Capri Bar couldn't hook into Capri: " + error.Message);
+        }
+    }
+
+    Form CreateOverlay(string title, Cursor cursor, Action onClick, out StillHook hook)
+    {
+        Form f = (Form)Activator.CreateInstance(overlayType, Any, null, new object[] { title }, null);
+        f.Cursor = cursor;
+        f.Owner = window;
+        f.MouseUp += delegate(object sender, MouseEventArgs e) { if (e.Button == MouseButtons.Left) onClick(); };
+        hook = new StillHook();
+        hook.AssignHandle(f.Handle);
+        return f;
+    }
+
+    public bool Heard(string words) { return false; }
+
+    public void Stop()
+    {
+        suppressed = barActive = glitchDirty = suppressTypeUp = typeWasOpenOnPress = false;
+        animStart = glitchTear = pillDownPart = 0;
+        currentClipRight = int.MaxValue;
+        OnUi(delegate
+        {
+            if (typer != null) typer.VisibleChanged -= OnTyperVisibleChanged;
+            RestoreSiblingLayers();
+            UnhookPillLayer();
+            if (timer != null) { timer.Dispose(); timer = null; }
+            if (watch != null) { watch.ReleaseHandle(); watch = null; }
+            if (still != null) { still.ReleaseHandle(); still = null; }
+            if (trayStill != null) { trayStill.ReleaseHandle(); trayStill = null; }
+            if (typerHook != null) { typerHook.ReleaseHandle(); typerHook = null; }
+            if (button != null) { button.Dispose(); button = null; }
+            if (trayButton != null) { trayButton.Dispose(); trayButton = null; }
+        });
+    }
+
+    double Now() { return clock != null ? clock.Elapsed.TotalSeconds : Environment.TickCount / 1000.0; }
+
+    bool Showing() { return pill != null && !pill.IsDisposed && pill.IsHandleCreated && pill.Visible && IsWindowVisible(pill.Handle); }
+
+    bool IsDragging()
+    {
+        if (draggingField == null || window == null || window.IsDisposed) return false;
+        try { return (bool)draggingField.GetValue(window); }
+        catch (Exception) { return false; }
+    }
+
+    float Scale()
+    {
+        float s = (float)pillScale.GetValue(pill);
+        return s >= 0.5f && s <= 8 ? s : (float)talkScale.Invoke(window, null);
+    }
+
+    bool IsHologram()
+    {
+        if (hologramState == null) return false;
+        try { return (bool)hologramState.GetValue(window, null); }
+        catch (Exception) { return false; }
+    }
+
+    bool ShouldSuppressPill() { return suppressed || IsDragging() || (minimized && animProgress <= 0.01f && animTo <= 0.01f); }
+
+    bool ShouldKeepPillVisible() { return barActive && !ShouldSuppressPill(); }
+
+    void OnTyperVisibleChanged(object sender, EventArgs e)
+    {
+        if (typer == null || typer.IsDisposed) return;
+        if (typer.Visible) typerWasOpen = true;
+        else if (typerWasOpen) { typerWasOpen = false; typerClosedAt = Now(); }
+    }
+
+    bool IsTypeBoxOpenOrJustClosed(double now)
+    {
+        Form active = FindTypingForm();
+        return (active != null && active.Visible) || now - typerClosedAt < 0.30;
+    }
+
+    void HideTypeBox()
+    {
+        Form active = FindTypingForm();
+        if (active != null && !active.IsDisposed && active.Visible) active.Hide();
+        typerWasOpen = false;
+        typerClosedAt = -10;
+    }
+
+    void OnPillLeftDown(int localX)
+    {
+        suppressTypeUp = PillPartAt(localX, Scale(), (bool)chatting.GetValue(pill, null)) == 1 && IsTypeBoxOpenOrJustClosed(Now());
+    }
+
+    bool ShouldSuppressPillLeftUp(int localX)
+    {
+        int part = PillPartAt(localX, Scale(), (bool)chatting.GetValue(pill, null));
+        bool armed = suppressTypeUp;
+        suppressTypeUp = false;
+        if (part == 0) return true;
+        if (part == 1 && (armed || IsTypeBoxOpenOrJustClosed(Now())))
+        {
+            lastNativePillClickAt = Now();
+            HideTypeBox();
+            return true;
+        }
+        return false;
+    }
+
+    void StartGlitch(double now)
+    {
+        bool motion = true;
+        if (pillMotion != null) { try { motion = (bool)pillMotion.GetValue(pill); } catch (Exception) { } }
+        if (!motion) { glitchTear = 0; glitchDirty = false; return; }
+        glitchTear = TearFrames;
+        glitchSeed = rng.Next(1, int.MaxValue);
+        glitchNextAt = now + GlitchStep;
+        glitchDirty = true;
+    }
+
+    void StepGlitch(double now)
+    {
+        if (glitchTear > 0 && now >= glitchNextAt)
+        {
+            glitchTear--;
+            glitchNextAt = now + GlitchStep;
+            glitchDirty = true;
+        }
+    }
+
+    bool BeginHologramBypass()
+    {
+        lastNativePillClickAt = Now();
+        if (!IsHologram() || preferencesField == null) return false;
+        try
+        {
+            object prefs = preferencesField.GetValue(window);
+            if (prefs == null) return false;
+            if (hologramPrefField == null) hologramPrefField = prefs.GetType().GetField("Hologram", Any);
+            if (hologramPrefField != null && (bool)hologramPrefField.GetValue(prefs))
+            {
+                hologramPrefField.SetValue(prefs, false);
+                return true;
+            }
+        }
+        catch (Exception) { }
+        return false;
+    }
+
+    void EndHologramBypass(bool restore)
+    {
+        if (!restore || preferencesField == null || hologramPrefField == null) return;
+        try
+        {
+            object prefs = preferencesField.GetValue(window);
+            if (prefs != null) hologramPrefField.SetValue(prefs, true);
+        }
+        catch (Exception) { }
+    }
+
+    void EnsurePillInteractive()
+    {
+        if (clickThroughField != null)
+        {
+            try { if ((bool)clickThroughField.GetValue(pill)) clickThroughField.SetValue(pill, false); }
+            catch (Exception) { }
+        }
+        if (!pill.Enabled) pill.Enabled = true;
+        if (pill.IsHandleCreated)
+        {
+            int ex = GetWindowLong(pill.Handle, GwlExStyle);
+            if ((ex & WsExTransparent) != 0) SetWindowLong(pill.Handle, GwlExStyle, ex & ~WsExTransparent);
+        }
+    }
+
+    int PillPartAt(int localX, float s, bool chat)
+    {
+        int wide = (int)Math.Round(100 * s);
+        int maxW = chat ? wide + (int)Math.Round(4 * s) + (int)Math.Round(Side * s) : wide;
+        if (localX < 0 || localX >= maxW) return 0;
+        if (pillPartAtMethod != null)
+        {
+            try { return (int)pillPartAtMethod.Invoke(null, new object[] { localX, s, chat }); }
+            catch (Exception) { }
+        }
+        return chat && localX >= wide ? 3 : localX < wide / 2 ? 1 : 2;
+    }
+
+    void InvokePillPress(int part)
+    {
+        if (pillPressMethod == null) return;
+        bool restore = BeginHologramBypass();
+        try { pillPressMethod.Invoke(pill, new object[] { part }); }
+        catch (Exception) { }
+        finally { EndHologramBypass(restore); }
+    }
+
+    void HookPillLayer()
+    {
+        if (layerField == null) return;
+        originalLayer = layerField.GetValue(pill) as Action<IntPtr, Bitmap, Point>;
+        if (originalLayer == null) return;
+        Action<IntPtr, Bitmap, Point> wrapped = delegate(IntPtr handle, Bitmap image, Point at)
+        {
+            if (ShouldSuppressPill()) return;
+            Point target = at;
+            int clipRight = currentClipRight;
+            if (window != null && !window.IsDisposed)
+            {
+                float s = Scale();
+                BarLayout layout = ComputeLayout(s, Real(window));
+                pillCentre.SetValue(pill, layout.PillCentre);
+                target = layout.PillLocation;
+                currentClipRight = clipRight = layout.ClipRight;
+                lastLayout = layout;
+                lastScale = s;
+            }
+            if (animProgress < 0.999f) DrawEffect(originalLayer, handle, image, target, clipRight, 0, 0, lastScale);
+            else originalLayer(handle, image, target);
+        };
+        layerField.SetValue(pill, wrapped);
+    }
+
+    void UnhookPillLayer()
+    {
+        if (layerField == null || originalLayer == null || pill == null || pill.IsDisposed) return;
+        try { layerField.SetValue(pill, originalLayer); }
+        catch (Exception) { }
+        originalLayer = null;
+    }
+
+    bool IsBarSibling(Form f, Point at, BarLayout layout, float s)
+    {
+        if (f == null || f.IsDisposed) return false;
+        Rectangle r = Real(f);
+        int w = r.Width > 0 ? r.Width : f.Width, h = r.Height > 0 ? r.Height : f.Height;
+        int maxSide = (int)Math.Round(Side * 1.6f * s);
+        if (w <= 0 || h <= 0 || w > maxSide || h > maxSide || Math.Abs(at.Y - layout.PillLocation.Y) > (int)Math.Round(16 * s)) return false;
+        int pad = (int)Math.Round(Side * 3.5f * s);
+        return at.X >= layout.BarBounds.Left - pad && at.X <= layout.BarBounds.Right + pad;
+    }
+
+    void HookSiblingLayers()
+    {
+        if (layerField == null || overlayType == null) return;
+        List<Form> dead = null;
+        foreach (Form f in siblingLayers.Keys)
+            if (f == null || f.IsDisposed) { if (dead == null) dead = new List<Form>(); dead.Add(f); }
+        if (dead != null) for (int i = 0; i < dead.Count; i++) siblingLayers.Remove(dead[i]);
+
+        try
+        {
+            foreach (Form f in Application.OpenForms)
+            {
+                if (f == null || f.IsDisposed || f == window || f == pill || f == button || f == trayButton || f == box || f == mainframe || f == typer) continue;
+                if (f.GetType() != overlayType || f.Owner != window || siblingLayers.ContainsKey(f)) continue;
+                Action<IntPtr, Bitmap, Point> orig = layerField.GetValue(f) as Action<IntPtr, Bitmap, Point>;
+                if (orig == null) continue;
+                Form sibling = f;
+                siblingLayers[sibling] = orig;
+                Action<IntPtr, Bitmap, Point> wrapped = delegate(IntPtr handle, Bitmap image, Point at)
+                {
+                    if (ShouldSuppressPill() && IsBarSibling(sibling, at, lastLayout, lastScale)) return;
+                    bool shouldClip = animProgress < 0.999f && currentClipRight != int.MaxValue;
+                    bool shouldGlitch = glitchTear > 0 && animProgress >= 0.999f;
+                    if ((shouldClip || shouldGlitch) && IsBarSibling(sibling, at, lastLayout, lastScale))
+                        DrawEffect(orig, handle, image, at, shouldClip ? currentClipRight : int.MaxValue, shouldGlitch ? glitchTear : 0, glitchSeed + (sibling.Handle.ToInt32() & 0xFFFF), lastScale);
+                    else
+                        orig(handle, image, at);
+                };
+                layerField.SetValue(sibling, wrapped);
+            }
+        }
+        catch (Exception) { }
+    }
+
+    void RestoreSiblingLayers()
+    {
+        if (layerField == null) { siblingLayers.Clear(); return; }
+        foreach (KeyValuePair<Form, Action<IntPtr, Bitmap, Point>> entry in siblingLayers)
+        {
+            Form f = entry.Key;
+            if (f == null || f.IsDisposed) continue;
+            try
+            {
+                layerField.SetValue(f, entry.Value);
+                if (f.Visible && f.IsHandleCreated && overlayImageProp != null)
+                {
+                    Bitmap img = overlayImageProp.GetValue(f, null) as Bitmap;
+                    if (img != null) entry.Value(f.Handle, img, Real(f).Location);
+                }
+            }
+            catch (Exception) { }
+        }
+        siblingLayers.Clear();
+    }
+
+    void RefreshOverlays(BarLayout layout, float s, bool includePill)
+    {
+        if (overlayImageProp == null) return;
+        bool shouldClip = animProgress < 0.999f;
+        bool shouldGlitch = glitchTear > 0 && !shouldClip;
+
+        if (includePill && originalLayer != null && pill.IsHandleCreated && pill.Visible)
+        {
+            try
+            {
+                Bitmap img = overlayImageProp.GetValue(pill, null) as Bitmap;
+                if (img != null)
+                {
+                    if (shouldClip) DrawEffect(originalLayer, pill.Handle, img, layout.PillLocation, layout.ClipRight, 0, 0, s);
+                    else originalLayer(pill.Handle, img, layout.PillLocation);
+                }
+            }
+            catch (Exception) { }
+        }
+
+        foreach (KeyValuePair<Form, Action<IntPtr, Bitmap, Point>> entry in siblingLayers)
+        {
+            Form f = entry.Key;
+            if (f == null || f.IsDisposed || !f.IsHandleCreated || !f.Visible) continue;
+            try
+            {
+                Point at = Real(f).Location;
+                if (!IsBarSibling(f, at, layout, s)) continue;
+                Bitmap img = overlayImageProp.GetValue(f, null) as Bitmap;
+                if (img == null) continue;
+                if (shouldClip || shouldGlitch)
+                    DrawEffect(entry.Value, f.Handle, img, at, shouldClip ? layout.ClipRight : int.MaxValue, shouldGlitch ? glitchTear : 0, glitchSeed + (f.Handle.ToInt32() & 0xFFFF), s);
+                else
+                    entry.Value(f.Handle, img, at);
+            }
+            catch (Exception) { }
+        }
+    }
+
+    void DrawEffect(Action<IntPtr, Bitmap, Point> layer, IntPtr handle, Bitmap src, Point at, int clipRight, int tear, int seed, float s)
+    {
+        if (src == null) return;
+        int clipW = clipRight != int.MaxValue ? clipRight - at.X : src.Width;
+        if (clipW >= src.Width && tear <= 0) { layer(handle, src, at); return; }
+        using (Bitmap work = new Bitmap(src.Width, src.Height, PixelFormat.Format32bppPArgb))
+        {
+            if (clipW > 0)
+            {
+                int drawW = Math.Min(src.Width, clipW);
+                using (Graphics g = Graphics.FromImage(work))
+                {
+                    g.CompositingMode = CompositingMode.SourceCopy;
+                    g.DrawImage(src, new Rectangle(0, 0, drawW, src.Height), new Rectangle(0, 0, drawW, src.Height), GraphicsUnit.Pixel);
+                }
+                if (tear > 0 && clipW >= src.Width)
+                {
+                    int m = (int)Math.Round(3 * s);
+                    ApplyTear(work, new Rectangle(m, m, Math.Max(1, work.Width - m * 2), Math.Max(1, work.Height - m * 2)), s, Math.Min(1f, (float)tear / TearFrames), seed + tear);
+                }
+                if (clipW < src.Width) ApplyRightFade(work, clipW);
+            }
+            layer(handle, work, at);
+        }
+    }
+
+    void ApplyTear(Bitmap image, Rectangle body, float s, float amount, int seed)
+    {
+        if (image.Width < 4 || image.Height < 4 || amount <= 0f) return;
+        Random roll = new Random(seed);
+        using (Bitmap clean = image.Clone(new Rectangle(0, 0, image.Width, image.Height), image.PixelFormat))
+        using (Graphics g = Graphics.FromImage(image))
+        using (Brush clear = new SolidBrush(Color.Transparent))
+        {
+            int bands = 2 + (int)Math.Round(2 * amount), maxBand = Math.Max(2, image.Height / 2);
+            for (int i = 0; i < bands; i++)
+            {
+                int band = Math.Min(maxBand, Math.Max(2, (int)Math.Round((2 + roll.Next(6)) * s)));
+                int top = roll.Next(Math.Max(1, image.Height - band));
+                int shift = (roll.Next(2) == 0 ? -1 : 1) * Math.Max(1, (int)Math.Round((2 + roll.Next(6)) * s * amount));
+                Rectangle strip = new Rectangle(0, top, image.Width, band);
+                g.SetClip(strip);
+                g.CompositingMode = CompositingMode.SourceCopy;
+                g.FillRectangle(clear, strip);
+                g.DrawImage(clean, new Rectangle(shift, 0, image.Width, image.Height));
+                g.CompositingMode = CompositingMode.SourceOver;
+                g.SetClip(body);
+                g.IntersectClip(strip);
+                using (Brush tint = new SolidBrush(Color.FromArgb((int)(96 * amount), i % 2 == 0 ? pink : cyan)))
+                    g.FillRectangle(tint, strip);
+                g.ResetClip();
+            }
+        }
+    }
+
+    static void ApplyRightFade(Bitmap bmp, int clipW)
+    {
+        int fade = Math.Min(6, clipW);
+        if (fade <= 0) return;
+        BitmapData data = bmp.LockBits(new Rectangle(clipW - fade, 0, fade, bmp.Height), ImageLockMode.ReadWrite, PixelFormat.Format32bppPArgb);
+        try
+        {
+            int stride = Math.Abs(data.Stride), bytes = stride * bmp.Height;
+            byte[] buf = new byte[bytes];
+            Marshal.Copy(data.Scan0, buf, 0, bytes);
+            for (int y = 0; y < bmp.Height; y++)
+            {
+                int row = y * stride;
+                for (int x = 0; x < fade; x++)
+                {
+                    float f = 1f - (float)(x + 1) / (fade + 1);
+                    int idx = row + x * 4;
+                    buf[idx] = (byte)(buf[idx] * f);
+                    buf[idx + 1] = (byte)(buf[idx + 1] * f);
+                    buf[idx + 2] = (byte)(buf[idx + 2] * f);
+                    buf[idx + 3] = (byte)(buf[idx + 3] * f);
+                }
+            }
+            Marshal.Copy(buf, 0, data.Scan0, bytes);
+        }
+        finally { bmp.UnlockBits(data); }
+    }
+
+    void ResolveHologramControl()
+    {
+        if (mainframeField == null) return;
+        Control frame = mainframeField.GetValue(window) as Control;
+        if (frame == null || frame.IsDisposed) return;
+        mainframe = frame;
+        FieldInfo anchor = frame.GetType().GetField("hologram", Any);
+        Control ctrl = anchor == null ? null : anchor.GetValue(frame) as Control;
+        if (ctrl == null || ctrl.IsDisposed) return;
+        hologramControl = ctrl;
+        hologramChecked = ctrl.GetType().GetProperty("Checked", Any);
+    }
+
+    void ToggleMinimize()
+    {
+        minimized = !minimized;
+        capri.Store.Set("bar_minimized", minimized);
+        double now = Now();
+        animFrom = animProgress;
+        animTo = minimized ? 0f : 1f;
+        animStart = now;
+        glitchTear = 0;
+        glitchDirty = suppressed = false;
+        barActive = true;
+        deadline = now + (IsHologram() ? HologramTimeout : NormalTimeout);
+        if (!minimized) pillShownInActive = false;
+        Tick();
+    }
+
+    void ToggleHologram()
+    {
+        ResolveHologramControl();
+        bool next = !IsHologram();
+        bool changed = false;
+
+        if (hologramControl != null && !hologramControl.IsDisposed)
+        {
+            try
+            {
+                MethodInfo click = typeof(Control).GetMethod("OnClick", Any, null, new[] { typeof(EventArgs) }, null);
+                if (click != null) { click.Invoke(hologramControl, new object[] { EventArgs.Empty }); changed = IsHologram() == next; }
+                if (!changed && hologramChecked != null && hologramChecked.CanWrite)
+                {
+                    hologramChecked.SetValue(hologramControl, next, null);
+                    changed = IsHologram() == next;
+                }
+            }
+            catch (Exception) { }
+        }
+        if (!changed && hologramState != null && hologramState.CanWrite)
+        {
+            try { hologramState.SetValue(window, next, null); changed = IsHologram() == next; }
+            catch (Exception) { }
+        }
+        if (!changed)
+        {
+            try
+            {
+                MethodInfo toggle = window.GetType().GetMethod("ToggleHologram", Any, null, Type.EmptyTypes, null);
+                if (toggle != null) toggle.Invoke(window, null);
+            }
+            catch (Exception) { }
+        }
+
+        bool nowHolo = IsHologram();
+        if (hologramControl != null && !hologramControl.IsDisposed && hologramChecked != null && hologramChecked.CanWrite)
+        {
+            try { if ((bool)hologramChecked.GetValue(hologramControl, null) != nowHolo) hologramChecked.SetValue(hologramControl, nowHolo, null); }
+            catch (Exception) { }
+        }
+
+        suppressed = false;
+        barActive = true;
+        deadline = Now() + (nowHolo ? HologramTimeout : NormalTimeout);
+        Tick();
+    }
+
+    void EnsurePillHook()
+    {
+        if (!pill.IsHandleCreated || (watch != null && watch.Handle == pill.Handle)) return;
+        if (watch != null) watch.ReleaseHandle();
+        watch = new PillHook
+        {
+            ShouldSuppress = ShouldSuppressPill,
+            ShouldKeepVisible = ShouldKeepPillVisible,
+            AdjustLocation = OnPillAdjustLocation,
+            Moved = OnPillMoved,
+            OnLeftDown = OnPillLeftDown,
+            SuppressLeftUp = ShouldSuppressPillLeftUp,
+            BeginNativeClick = BeginHologramBypass,
+            EndNativeClick = EndHologramBypass
+        };
+        watch.AssignHandle(pill.Handle);
+    }
+
+    Point? OnPillAdjustLocation(Point proposed)
+    {
+        if (adjusting || window == null || window.IsDisposed) return null;
+        float s = Scale();
+        BarLayout layout = ComputeLayout(s, Real(window));
+        currentClipRight = layout.ClipRight;
+        lastLayout = layout;
+        lastScale = s;
+        pillCentre.SetValue(pill, layout.PillCentre);
+        return layout.PillLocation;
+    }
+
+    void OnPillMoved()
+    {
+        if (adjusting || !Showing() || ShouldSuppressPill()) return;
+        float s = Scale();
+        BarLayout layout = ComputeLayout(s, Real(window));
+        currentClipRight = layout.ClipRight;
+        lastLayout = layout;
+        lastScale = s;
+        ApplyPillPosition(layout);
+        RenderEyeButton(s, layout.EyeBounds, layout.ClipRight, Cursor.Position, IsHologram(), glitchTear);
+    }
+
+    void StepAnimation(double now)
+    {
+        if (animStart <= 0) return;
+        double t = (now - animStart) / AnimDuration;
+        if (t >= 1.0) { animProgress = animTo; animStart = 0; }
+        else
+        {
+            float inv = 1f - (float)t;
+            animProgress = animFrom + (animTo - animFrom) * (1f - inv * inv * inv);
+        }
+    }
+
+    Rectangle GetSpriteBounds(Rectangle capriRect)
+    {
+        double now = Now();
+        if (cachedCanvasSize != capriRect.Size)
+        {
+            cachedCanvasSize = capriRect.Size;
+            cachedLocalSprite = Rectangle.Empty;
+            lastSpriteScan = -10;
+        }
+        if (bodySurfaceField != null && (cachedLocalSprite.IsEmpty || now - lastSpriteScan >= 0.12))
+        {
+            lastSpriteScan = now;
+            try
+            {
+                object surface = bodySurfaceField.GetValue(window);
+                Bitmap bmp = surface as Bitmap;
+                if (bmp == null && surface != null)
+                {
+                    if (surfaceImageProp == null) surfaceImageProp = surface.GetType().GetProperty("Image", Any);
+                    if (surfaceImageProp != null) bmp = surfaceImageProp.GetValue(surface, null) as Bitmap;
+                }
+                if (bmp != null && bmp.Width > 0 && bmp.Height > 0)
+                {
+                    Rectangle found = MeasureOpaqueBounds(bmp);
+                    if (!found.IsEmpty)
+                    {
+                        float sx = (float)capriRect.Width / bmp.Width, sy = (float)capriRect.Height / bmp.Height;
+                        cachedLocalSprite = new Rectangle(
+                            (int)Math.Round(found.X * sx),
+                            (int)Math.Round(found.Y * sy),
+                            Math.Max(1, (int)Math.Round(found.Width * sx)),
+                            Math.Max(1, (int)Math.Round(found.Height * sy)));
+                    }
+                }
+            }
+            catch (Exception) { }
+        }
+        if (!cachedLocalSprite.IsEmpty)
+            return new Rectangle(capriRect.Left + cachedLocalSprite.Left, capriRect.Top + cachedLocalSprite.Top, cachedLocalSprite.Width, cachedLocalSprite.Height);
+        int ix = capriRect.Width / 4, iy = capriRect.Height / 8;
+        return new Rectangle(capriRect.Left + ix, capriRect.Top + iy, Math.Max(1, capriRect.Width - ix * 2), Math.Max(1, capriRect.Height - iy * 2));
+    }
+
+    Rectangle MeasureOpaqueBounds(Bitmap bmp)
+    {
+        int w = bmp.Width, h = bmp.Height;
+        BitmapData data = bmp.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+        try
+        {
+            int stride = Math.Abs(data.Stride), total = stride * h;
+            if (scanBuffer == null || scanBuffer.Length < total) scanBuffer = new byte[total];
+            Marshal.Copy(data.Scan0, scanBuffer, 0, total);
+            int minX = w, minY = h, maxX = -1, maxY = -1;
+            const int step = 4;
+            for (int y = 0; y < h; y += step)
+            {
+                int row = y * stride;
+                for (int x = 0; x < w; x += step)
+                {
+                    if (scanBuffer[row + x * 4 + 3] >= 10)
+                    {
+                        if (x < minX) minX = x;
+                        if (x > maxX) maxX = x;
+                        if (y < minY) minY = y;
+                        if (y > maxY) maxY = y;
+                    }
+                }
+            }
+            return maxX < minX || maxY < minY ? Rectangle.Empty : Rectangle.FromLTRB(minX, minY, Math.Min(w, maxX + step), Math.Min(h, maxY + step));
+        }
+        finally { bmp.UnlockBits(data); }
+    }
+
+    BarLayout ComputeLayout(float s, Rectangle capriRect)
+    {
+        int side = (int)Math.Round(Side * s), trayW = (int)Math.Round(TrayWidth * s), trayH = (int)Math.Round(TrayHeight * s);
+        int gap = (int)Math.Round(Gap * s), wide = (int)Math.Round(100 * s), margin = (int)Math.Round(EdgeMargin * s), cGap = (int)Math.Round(CapriGap * s);
+
+        bool chat = (bool)chatting.GetValue(pill, null);
+        int leftSlots = (capri.Mods.IsRunning("mute-button") ? 1 : 0) + (capri.Mods.IsRunning("better-chat-capri") ? 1 : 0);
+        int leftExt = leftSlots * (side + gap);
+        int pillSpan = wide + (chat ? gap + side : 0);
+        int eyeOffset = pillSpan + gap;
+        int trayOffset = eyeOffset + side + gap;
+        int totalWidth = leftExt + trayOffset + trayW;
+
+        Rectangle spriteRect = GetSpriteBounds(capriRect);
+        Rectangle work = Screen.FromPoint(new Point(spriteRect.Left + spriteRect.Width / 2, spriteRect.Top + spriteRect.Height / 2)).WorkingArea;
+
+        int minLeft = work.Left + margin, maxLeft = Math.Max(minLeft, work.Right - margin - totalWidth);
+        int minTop = work.Top + margin, maxTop = Math.Max(minTop, work.Bottom - margin - side);
+        int maxTrayLeft = Math.Max(minLeft, work.Right - margin - trayW);
+
+        int expBarLeft, expBarTop, sidePlacement;
+        if (spriteRect.Bottom + cGap + side <= work.Bottom - margin)
+        {
+            sidePlacement = 0;
+            expBarTop = spriteRect.Bottom + cGap;
+            expBarLeft = spriteRect.Left + (spriteRect.Width - totalWidth) / 2;
+        }
+        else
+        {
+            bool goLeft = (spriteRect.Left - cGap - minLeft) > ((work.Right - margin) - (spriteRect.Right + cGap));
+            sidePlacement = goLeft ? -1 : 1;
+            expBarLeft = goLeft ? spriteRect.Left - cGap - totalWidth : spriteRect.Right + cGap;
+            expBarTop = Math.Min(spriteRect.Bottom - side, maxTop);
+        }
+
+        expBarLeft = Math.Max(minLeft, Math.Min(maxLeft, expBarLeft));
+        expBarTop = Math.Max(minTop, Math.Min(maxTop, expBarTop));
+
+        int expTrayLeft = expBarLeft + leftExt + trayOffset;
+        int collapsedTrayLeft = sidePlacement < 0 ? expTrayLeft
+            : sidePlacement > 0 ? Math.Max(minLeft, Math.Min(maxTrayLeft, spriteRect.Right + cGap))
+            : Math.Max(minLeft, Math.Min(maxTrayLeft, spriteRect.Left + (spriteRect.Width - trayW) / 2));
+
+        float p = animProgress;
+        int trayX = (int)Math.Round(collapsedTrayLeft + (expTrayLeft - collapsedTrayLeft) * p);
+        int trayY = expBarTop + (side - trayH) / 2;
+        int clipRight = trayX + trayW / 2;
+
+        int travel = (expTrayLeft + trayW / 2) - expBarLeft;
+        int animBarLeft = Math.Max(work.Left + 1, trayX - (expTrayLeft - expBarLeft) + (int)Math.Round((1f - p) * travel));
+        int pillLeft = animBarLeft + leftExt;
+
+        Rectangle eyeBounds = new Rectangle(pillLeft + eyeOffset, expBarTop, side, side);
+        Rectangle trayBounds = new Rectangle(trayX, trayY, trayW, trayH);
+
+        return new BarLayout
+        {
+            PillLocation = new Point(pillLeft, expBarTop),
+            PillCentre = new Point(pillLeft + wide / 2, expBarTop),
+            BarBounds = Rectangle.FromLTRB(Math.Min(animBarLeft, trayBounds.Left), expBarTop, p < 0.999f ? Math.Max(trayBounds.Right, clipRight) : trayBounds.Right, expBarTop + side),
+            EyeBounds = eyeBounds,
+            TrayBounds = trayBounds,
+            ClipRight = clipRight,
+            ChevronDir = sidePlacement < 0 ? (minimized ? -1 : 1) : (minimized ? 1 : -1)
+        };
+    }
+
+    void ApplyPillPosition(BarLayout layout)
+    {
+        if ((Point)pillCentre.GetValue(pill) == layout.PillCentre && Real(pill).Location == layout.PillLocation) return;
+        adjusting = true;
+        try
+        {
+            pillCentre.SetValue(pill, layout.PillCentre);
+            if (pill.IsHandleCreated)
+                SetWindowPos(pill.Handle, IntPtr.Zero, layout.PillLocation.X, layout.PillLocation.Y, 0, 0, SwpNoSize | SwpNoZOrder | SwpNoActivate);
+        }
+        finally { adjusting = false; }
+    }
+
+    bool EnsurePillVisible(BarLayout layout, float s, bool quiet)
+    {
+        pillUntil.SetValue(window, Math.Max(deadline, Now() + 0.5));
+        if (Showing()) return true;
+
+        bool prevMotion = true;
+        if (quiet && pillMotion != null)
+        {
+            try { prevMotion = (bool)pillMotion.GetValue(pill); pillMotion.SetValue(pill, false); }
+            catch (Exception) { }
+        }
+        try
+        {
+            pillCentre.SetValue(pill, layout.PillCentre);
+            pillScale.SetValue(pill, s);
+            if (pill.Visible && pill.IsHandleCreated && !IsWindowVisible(pill.Handle))
+                ShowWindow(pill.Handle, SwShowNoActivate);
+            else if (pillPlaceMethod != null)
+                pillPlaceMethod.Invoke(pill, new object[] { layout.PillCentre, s });
+
+            if (!Showing())
+            {
+                if (!pill.Visible) pill.Show();
+                if (pill.IsHandleCreated && !IsWindowVisible(pill.Handle)) ShowWindow(pill.Handle, SwShowNoActivate);
+            }
+            if (pillRedrawMethod != null) pillRedrawMethod.Invoke(pill, null);
+            ApplyPillPosition(layout);
+        }
+        catch (Exception) { }
+        finally
+        {
+            if (quiet && pillMotion != null) { try { pillMotion.SetValue(pill, prevMotion); } catch (Exception) { } }
+        }
+        return Showing();
+    }
+
+    void DismissBar()
+    {
+        barActive = pillShownInActive = wasBarVisible = glitchDirty = suppressTypeUp = typeWasOpenOnPress = eyeHover = trayHover = false;
+        suppressed = true;
+        deadline = glitchTear = pillDownPart = 0;
+        if (animStart > 0) { animProgress = animTo; animStart = 0; }
+        currentClipRight = int.MaxValue;
+        try { pillUntil.SetValue(window, 0.0); } catch (Exception) { }
+        HideTypeBox();
+        if (pill.Visible) pill.Hide();
+        if (button.Visible) button.Hide();
+        if (trayButton.Visible) trayButton.Hide();
+    }
+
+    Form FindTypingForm()
+    {
+        if (typer != null && !typer.IsDisposed && typer.Visible) return typer;
+        try
+        {
+            foreach (Form f in Application.OpenForms)
+                if (f != null && !f.IsDisposed && f.Visible && f.GetType().Name == "TypeBox") return f;
+        }
+        catch (Exception) { }
+        return null;
+    }
+
+    void Tick()
+    {
+        if (window == null || window.IsDisposed || pill == null || pill.IsDisposed || button == null || button.IsDisposed || trayButton == null || trayButton.IsDisposed) return;
+
+        EnsurePillHook();
+        HookSiblingLayers();
+
+        double now = Now();
+        bool hologram = IsHologram();
+        double timeout = hologram ? HologramTimeout : NormalTimeout;
+        Point cursor = Cursor.Position;
+
+        Rectangle capriRect = Real(window);
+        Rectangle spriteRect = GetSpriteBounds(capriRect);
+        bool hoverCapri = window.IsHandleCreated && window.Visible && IsWindowVisible(window.Handle) && Rectangle.Inflate(spriteRect, 4, 4).Contains(cursor);
+        bool enteredCapri = hoverCapri && !wasHoverCapri;
+        wasHoverCapri = hoverCapri;
+
+        short lState = GetAsyncKeyState(VkLButton), rState = GetAsyncKeyState(VkRButton);
+        bool lDown = (lState & 0x8000) != 0, rDown = (rState & 0x8000) != 0;
+        bool lPressed = lDown && !wasLDown, lReleased = !lDown && wasLDown;
+        bool clicked = lPressed || (rDown && !wasRDown) || (wasBarVisible && (((lState & 0x0001) != 0) || ((rState & 0x0001) != 0)));
+        wasLDown = lDown;
+        wasRDown = rDown;
+
+        if (IsDragging())
+        {
+            if (barActive || pill.Visible || Showing() || button.Visible || trayButton.Visible) DismissBar();
+            suppressed = true;
+            return;
+        }
+
+        if (enteredCapri) suppressed = false;
+
+        bool pillShowing = Showing();
+        if (!barActive && !suppressed)
+        {
+            if (hoverCapri || pillShowing)
+            {
+                barActive = true;
+                pillShownInActive = pillShowing && !ShouldSuppressPill();
+                deadline = now + timeout;
+                StartGlitch(now);
+            }
+        }
+        else if (!barActive && suppressed && (pill.Visible || pillShowing))
+        {
+            pill.Hide();
+            return;
+        }
+
+        if (!barActive)
+        {
+            wasBarVisible = pillShownInActive = typeWasOpenOnPress = glitchDirty = eyeHover = trayHover = false;
+            pillDownPart = glitchTear = 0;
+            if (button.Visible) button.Hide();
+            if (trayButton.Visible) trayButton.Hide();
+            return;
+        }
+
+        bool wasAnimating = animStart > 0;
+        StepAnimation(now);
+        StepGlitch(now);
+        bool justFinishedAnim = wasAnimating && animStart == 0;
+
+        float s = Scale();
+        BarLayout layout = ComputeLayout(s, capriRect);
+        currentClipRight = layout.ClipRight;
+        lastLayout = layout;
+        lastScale = s;
+        bool hidePill = ShouldSuppressPill();
+        int activeTear = animStart > 0 ? 0 : glitchTear;
+
+        if (!hidePill)
+        {
+            bool pillReady = EnsurePillVisible(layout, s, pillShownInActive || animStart > 0);
+            if (pillReady)
+            {
+                EnsurePillInteractive();
+                ApplyPillPosition(layout);
+                pillShownInActive = true;
+                if (animStart > 0 || justFinishedAnim) RefreshOverlays(layout, s, true);
+                else if (glitchDirty) RefreshOverlays(layout, s, false);
+                RenderEyeButton(s, layout.EyeBounds, layout.ClipRight, cursor, hologram, activeTear);
+            }
+            else
+            {
+                if (button.Visible) button.Hide();
+                eyeHover = false;
+            }
+
+            if (pillReady && hologram && animProgress >= 0.999f)
+            {
+                Rectangle pillRect = Real(pill);
+                bool onPill = pillRect.Contains(cursor) && !layout.EyeBounds.Contains(cursor) && !layout.TrayBounds.Contains(cursor);
+                int wantHover = onPill ? PillPartAt(cursor.X - pillRect.Left, s, (bool)chatting.GetValue(pill, null)) : 0;
+                if (pillHoverField != null && pillRedrawMethod != null)
+                {
+                    try
+                    {
+                        if ((int)pillHoverField.GetValue(pill) != wantHover)
+                        {
+                            pillHoverField.SetValue(pill, wantHover);
+                            pillRedrawMethod.Invoke(pill, null);
+                        }
+                    }
+                    catch (Exception) { }
+                }
+
+                if (lPressed)
+                {
+                    pillDownPart = onPill ? wantHover : 0;
+                    typeWasOpenOnPress = pillDownPart == 1 && IsTypeBoxOpenOrJustClosed(now);
+                }
+                else if (lReleased && pillDownPart > 0)
+                {
+                    int targetPart = onPill && wantHover == pillDownPart ? wantHover : 0;
+                    bool closeType = targetPart == 1 && (typeWasOpenOnPress || IsTypeBoxOpenOrJustClosed(now));
+                    pillDownPart = 0;
+                    typeWasOpenOnPress = false;
+                    if (targetPart > 0 && now - lastNativePillClickAt > 0.12)
+                    {
+                        if (closeType) HideTypeBox();
+                        else InvokePillPress(targetPart);
+                    }
+                }
+            }
+            else if (!lDown) { pillDownPart = 0; typeWasOpenOnPress = false; }
+        }
+        else
+        {
+            pillDownPart = 0;
+            typeWasOpenOnPress = eyeHover = pillShownInActive = false;
+            if (pill.Visible) pill.Hide();
+            if (button.Visible) button.Hide();
+        }
+
+        glitchDirty = false;
+        RenderTrayButton(s, layout.TrayBounds, cursor, layout.ChevronDir, minimized, activeTear);
+        if (trayButton.IsHandleCreated && trayButton.Visible && (animStart > 0 || justFinishedAnim))
+            SetWindowPos(trayButton.Handle, new IntPtr(-1), 0, 0, 0, 0, SwpNoSize | SwpNoMove | SwpNoActivate);
+
+        Form typingForm = FindTypingForm();
+        IntPtr fg = GetForegroundWindow();
+        bool typingActive = fg != IntPtr.Zero && typingForm != null && typingForm.IsHandleCreated && (fg == typingForm.Handle || typingForm.ContainsFocus);
+        int pad = (int)Math.Round(4 * s);
+        bool hoverBar = Rectangle.Inflate(hidePill ? layout.TrayBounds : layout.BarBounds, pad, pad).Contains(cursor)
+            || (typingForm != null && Real(typingForm).Contains(cursor));
+
+        if (clicked && !hoverBar) { DismissBar(); return; }
+        if (hoverBar || typingActive || animStart > 0) deadline = Math.Max(deadline, now + timeout);
+        if (now >= deadline && !hoverBar && !typingActive && animStart == 0) { DismissBar(); return; }
+
+        if (!hidePill) pillUntil.SetValue(window, Math.Max(deadline, now + 0.5));
+        wasBarVisible = true;
+    }
+
+    void RenderEyeButton(float s, Rectangle want, int clipRight, Point cursor, bool hologram, int tear)
+    {
+        int clipW = animProgress < 0.999f ? Math.Max(0, Math.Min(want.Width, clipRight - want.Left)) : want.Width;
+        if (clipW <= 0) { if (button.Visible) button.Hide(); eyeHover = false; drawnEyeClip = 0; return; }
+
+        int useTear = clipW < want.Width ? 0 : tear;
+        eyeHover = animProgress >= 0.999f && button.Visible && want.Contains(cursor) && Body(s).Contains(new Point(cursor.X - want.X, cursor.Y - want.Y));
+        if (button.Visible && Real(button) == want && s == drawnScale && eyeHover == drawnHover && hologram == drawnHologram && clipW == drawnEyeClip && useTear == drawnEyeTear) return;
+        drawnScale = s; drawnHover = eyeHover; drawnHologram = hologram; drawnEyeClip = clipW; drawnEyeTear = useTear;
+
+        Bitmap img = Render(s, eyeHover, hologram, useTear);
+        if (clipW < img.Width)
+        {
+            Bitmap clipped = new Bitmap(img.Width, img.Height, PixelFormat.Format32bppPArgb);
+            using (Graphics g = Graphics.FromImage(clipped))
+            {
+                g.CompositingMode = CompositingMode.SourceCopy;
+                g.DrawImage(img, new Rectangle(0, 0, clipW, img.Height), new Rectangle(0, 0, clipW, img.Height), GraphicsUnit.Pixel);
+            }
+            ApplyRightFade(clipped, clipW);
+            img.Dispose();
+            img = clipped;
+        }
+        present.Invoke(button, new object[] { img, want.Location });
+    }
+
+    void RenderTrayButton(float s, Rectangle want, Point cursor, int dir, bool isMinimized, int tear)
+    {
+        trayHover = trayButton.Visible && want.Contains(cursor) && TrayBody(s).Contains(new Point(cursor.X - want.X, cursor.Y - want.Y));
+        if (trayButton.Visible && Real(trayButton) == want && s == drawnTrayScale && trayHover == drawnTrayHover && dir == drawnTrayDir && isMinimized == drawnTrayMinimized && tear == drawnTrayTear) return;
+        drawnTrayScale = s; drawnTrayHover = trayHover; drawnTrayDir = dir; drawnTrayMinimized = isMinimized; drawnTrayTear = tear;
+        present.Invoke(trayButton, new object[] { RenderTray(s, trayHover, dir, isMinimized, tear), want.Location });
+    }
+
+    static Size Measure(float s) { int side = (int)Math.Round(Side * s); return new Size(side, side); }
+    static Size MeasureTray(float s) { return new Size((int)Math.Round(TrayWidth * s), (int)Math.Round(TrayHeight * s)); }
+    static Rectangle Body(float s) { Size sz = Measure(Math.Max(s, 0.1f)); int m = (int)Math.Round(3 * s); return new Rectangle(m, m, sz.Width - m * 2, sz.Height - m * 2); }
+    static Rectangle TrayBody(float s) { Size sz = MeasureTray(Math.Max(s, 0.1f)); int m = (int)Math.Round(2 * s); return new Rectangle(m, m, sz.Width - m * 2, sz.Height - m * 2); }
+
+    Bitmap Render(float s, bool lit, bool hologram, int tear)
+    {
+        Size size = Measure(s);
+        Bitmap image = new Bitmap(size.Width, size.Height, PixelFormat.Format32bppPArgb);
+        Rectangle body = Body(s);
+        using (Graphics g = Graphics.FromImage(image))
+        {
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+            Color edge = hologram ? red : cyan;
+            plate.Invoke(null, new object[] { g, body, s, lit ? body : Rectangle.Empty, edge, edge });
+            DrawEyeIcon(g, new PointF(body.Left + body.Width / 2f, body.Top + body.Height / 2f), s, lit ? cyan : hologram ? dim : ink, hologram);
+        }
+        if (tear > 0) ApplyTear(image, body, s, Math.Min(1f, (float)tear / TearFrames), glitchSeed + tear + 17);
+        return image;
+    }
+
+    static GraphicsPath CutPlate(RectangleF box, float cut)
+    {
+        float c = Math.Min(cut, Math.Min(box.Width, box.Height) / 2f);
+        GraphicsPath path = new GraphicsPath();
+        path.AddPolygon(new[]
+        {
+            new PointF(box.Left + c, box.Top), new PointF(box.Right - c, box.Top),
+            new PointF(box.Right, box.Top + c), new PointF(box.Right, box.Bottom - c),
+            new PointF(box.Right - c, box.Bottom), new PointF(box.Left + c, box.Bottom),
+            new PointF(box.Left, box.Bottom - c), new PointF(box.Left, box.Top + c)
+        });
+        return path;
+    }
+
+    Bitmap RenderTray(float s, bool lit, int dir, bool isMinimized, int tear)
+    {
+        Size size = MeasureTray(s);
+        Bitmap raw = new Bitmap(size.Width, size.Height, PixelFormat.Format32bppPArgb);
+        Rectangle body = TrayBody(s);
+        using (Graphics g = Graphics.FromImage(raw))
+        {
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+            float cut = Math.Max(2f, 3.2f * s), edge = Math.Max(1f, 1.2f * s);
+            int margin = (int)Math.Round(2 * s);
+            using (GraphicsPath outline = CutPlate(body, cut))
+            {
+                if (lit) using (Pen glow = new Pen(Color.FromArgb(65, cyan), margin * 1.6f)) g.DrawPath(glow, outline);
+                using (Brush fill = new SolidBrush(PlateFill)) g.FillPath(fill, outline);
+                g.SetClip(outline);
+                int line = Math.Max(1, (int)Math.Round(s));
+                using (Pen scan = new Pen(Color.FromArgb(9, 255, 255, 255), line))
+                    for (int row = body.Top; row < body.Bottom; row += Math.Max(3, (int)Math.Round(3 * s)))
+                        g.DrawLine(scan, body.Left, row + line / 2f, body.Right, row + line / 2f);
+                if (lit) using (Brush wash = new SolidBrush(Color.FromArgb(40, cyan))) g.FillRectangle(wash, body);
+                g.ResetClip();
+            }
+            float inset = edge / 2f;
+            using (GraphicsPath rim = CutPlate(new RectangleF(body.Left + inset, body.Top + inset, body.Width - edge, body.Height - edge), Math.Max(1f, cut - inset * 0.586f)))
+            using (Pen pen = new Pen(lit ? cyan : Color.FromArgb(190, cyan), edge))
+                g.DrawPath(pen, rim);
+
+            float dx = 1.9f * s * dir, dy = 3.2f * s;
+            float cx = body.Left + body.Width / 2f, cy = body.Top + body.Height / 2f;
+            using (Pen pen = new Pen(lit ? cyan : isMinimized ? dim : ink, Math.Max(1.2f, 1.5f * s)))
+            {
+                pen.StartCap = pen.EndCap = LineCap.Round;
+                pen.LineJoin = LineJoin.Round;
+                g.DrawLines(pen, new[] { new PointF(cx - dx, cy - dy), new PointF(cx + dx, cy), new PointF(cx - dx, cy + dy) });
+            }
+        }
+        if (tear > 0) ApplyTear(raw, body, s, Math.Min(1f, (float)tear / TearFrames), glitchSeed + tear + 31);
+
+        float opacity = lit ? 1.0f : isMinimized ? 1.0f : 1.0f;
+        if (opacity >= 0.999f) return raw;
+
+        Bitmap image = new Bitmap(size.Width, size.Height, PixelFormat.Format32bppPArgb);
+        using (Graphics g = Graphics.FromImage(image))
+        using (ImageAttributes attrs = new ImageAttributes())
+        {
+            g.CompositingMode = CompositingMode.SourceCopy;
+            attrs.SetColorMatrix(new ColorMatrix { Matrix33 = opacity });
+            g.DrawImage(raw, new Rectangle(0, 0, size.Width, size.Height), 0, 0, size.Width, size.Height, GraphicsUnit.Pixel, attrs);
+        }
+        raw.Dispose();
+        return image;
+    }
+
+    void DrawEyeIcon(Graphics g, PointF center, float s, Color colour, bool slashed)
+    {
+        float k = s * IconScale, cx = center.X, cy = center.Y, r = 3.0f * k;
+        using (GraphicsPath path = new GraphicsPath())
+        {
+            path.AddBezier(cx - 8.5f * k, cy, cx - 4.2f * k, cy - 6.8f * k, cx + 4.2f * k, cy - 6.8f * k, cx + 8.5f * k, cy);
+            path.AddBezier(cx + 8.5f * k, cy, cx + 4.2f * k, cy + 6.8f * k, cx - 4.2f * k, cy + 6.8f * k, cx - 8.5f * k, cy);
+            path.CloseFigure();
+            using (Pen pen = new Pen(colour, 1.9f * k)) { pen.LineJoin = LineJoin.Round; pen.StartCap = pen.EndCap = LineCap.Round; g.DrawPath(pen, path); }
+        }
+        using (Brush brush = new SolidBrush(colour)) g.FillEllipse(brush, cx - r, cy - r, r * 2f, r * 2f);
+        if (slashed)
+        {
+            using (Pen slash = new Pen(red, 2.0f * k))
+            {
+                slash.StartCap = slash.EndCap = LineCap.Round;
+                g.DrawLine(slash, cx - 7.5f * k, cy - 6.5f * k, cx + 7.5f * k, cy + 6.5f * k);
+            }
+        }
+    }
+
+    void OnUi(Action work)
+    {
+        Action safe = delegate
+        {
+            try { work(); }
+            catch (Exception error) { capri.Log("Capri Bar: " + error.Message); }
+        };
+        try { if (window != null && window.IsHandleCreated && !window.IsDisposed && window.InvokeRequired) window.BeginInvoke(safe); else safe(); }
+        catch (InvalidOperationException) { safe(); }
+    }
+
+    static FieldInfo Field(Type type, string name) { return Need(type.GetField(name, Any), type.Name + "." + name); }
+    static T Need<T>(T found, string name) where T : class { if (found == null) throw new MissingMemberException(name + " is missing from this Capri version"); return found; }
+}
