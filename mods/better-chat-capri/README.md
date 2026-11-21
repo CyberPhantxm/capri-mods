@@ -1,7 +1,5 @@
 # Better Toolbar // Capri
 
-![Better Toolbar // Capri Preview](preview.png)
-
 Tired of the toolbar overlapping Capri or lingering on screen? Take full control over Capri's HUD layout and behavior!
 
 **How to use:** Hover over Capri to bring up her toolbar—it automatically positions itself clear of her sprite, the taskbar, and screen edges. 
