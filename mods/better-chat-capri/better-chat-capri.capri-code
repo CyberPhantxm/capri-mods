@@ -3,7 +3,7 @@
 // name: Better Chat // Capri
 // version: 1.0.1
 // author: CyberPhantxm
-// description: Hide chat bubble toggle button (MuteButton Mod Compatible), Esc to cancel thinking, 2.5s speech debounce with noise filter, and custom native chimes.
+// description: Hide chat bubble toggle (Mute Button & Hologram Speech Glass compatible, auto-shows for Security prompts), Esc to cancel thinking, 2.5s speech debounce with noise filter, and custom native chimes.
 // permissions: chat, voice
 // requires: api 3
 
