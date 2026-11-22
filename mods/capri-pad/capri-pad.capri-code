@@ -1,7 +1,7 @@
 // capri-mod: 1
 // id: capri-pad
 // name: Capri // Pad
-// version: 1.0.1
+// version: 1.0.2
 // author: CyberPhantxm
 // description: An interactive audio-reactive perch pad with custom visualizer bars, live microphone tracking, and dynamic scaling.
 // permissions: settings, music, voice
@@ -266,6 +266,7 @@ public class CapriPerchPadMod : ICapriMod
     private bool autoPerch = true;
     private bool onPad = false;
     private bool resumePadOnReturn = false;
+    private bool hidingViaMenu = false;
     public bool lastFacingLeft = false;
     
     private Point savedPadHip = new Point(260, 260);
@@ -290,10 +291,13 @@ public class CapriPerchPadMod : ICapriMod
     private double currentVelocity = 0;
 
     private int tickCount = 0;
+    private int hideGlitchTicks = 0;
+    private Point glitchBasePos = Point.Empty;
     private const string PAD_TITLE = "CyberPerchNode";
 
     private bool moveMenuInjected = false;
     private ToolStripMenuItem moveMenuItem = null;
+    private ToolStripMenuItem hideMenuItem = null;
     private ToolStripMenuItem perchPadCheckMenuItem = null;
 
     [DllImport("user32.dll")]
@@ -351,6 +355,16 @@ public class CapriPerchPadMod : ICapriMod
             pad = null;
         }
 
+        if (hideMenuItem != null)
+        {
+            try
+            {
+                hideMenuItem.Click -= OnHideMenuClicked;
+            }
+            catch { }
+            hideMenuItem = null;
+        }
+
         if (moveMenuItem != null)
         {
             try
@@ -399,16 +413,23 @@ public class CapriPerchPadMod : ICapriMod
                     foreach (ToolStripItem topItem in cms.Items)
                     {
                         ToolStripMenuItem mi = topItem as ToolStripMenuItem;
-                        if (mi != null && mi.Text.Trim().Equals("Move", StringComparison.OrdinalIgnoreCase))
+                        if (mi != null)
                         {
-                            mi.DropDownOpening -= OnMoveMenuOpening;
-                            for (int i = mi.DropDownItems.Count - 1; i >= 0; i--)
+                            if (mi.Text.Trim().Equals("Move", StringComparison.OrdinalIgnoreCase))
                             {
-                                ToolStripItem sub = mi.DropDownItems[i];
-                                if (sub.Text == "Auto Perch Pad" || sub.Text == "Sit on pad")
+                                mi.DropDownOpening -= OnMoveMenuOpening;
+                                for (int i = mi.DropDownItems.Count - 1; i >= 0; i--)
                                 {
-                                    mi.DropDownItems.RemoveAt(i);
+                                    ToolStripItem sub = mi.DropDownItems[i];
+                                    if (sub.Text == "Auto Perch Pad" || sub.Text == "Sit on pad")
+                                    {
+                                        mi.DropDownItems.RemoveAt(i);
+                                    }
                                 }
+                            }
+                            else if (mi.Text.Trim().IndexOf("Hide", StringComparison.OrdinalIgnoreCase) >= 0)
+                            {
+                                mi.Click -= OnHideMenuClicked;
                             }
                         }
                     }
@@ -695,11 +716,20 @@ public class CapriPerchPadMod : ICapriMod
                 foreach (ToolStripItem topItem in cms.Items)
                 {
                     ToolStripMenuItem mi = topItem as ToolStripMenuItem;
-                    if (mi != null && mi.Text.Trim().Equals("Move", StringComparison.OrdinalIgnoreCase))
+                    if (mi != null)
                     {
-                        moveMenuItem = mi;
-                        mi.DropDownOpening -= OnMoveMenuOpening;
-                        mi.DropDownOpening += OnMoveMenuOpening;
+                        if (mi.Text.Trim().Equals("Move", StringComparison.OrdinalIgnoreCase))
+                        {
+                            moveMenuItem = mi;
+                            mi.DropDownOpening -= OnMoveMenuOpening;
+                            mi.DropDownOpening += OnMoveMenuOpening;
+                        }
+                        else if (mi.Text.Trim().IndexOf("Hide", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            hideMenuItem = mi;
+                            mi.Click -= OnHideMenuClicked;
+                            mi.Click += OnHideMenuClicked;
+                        }
                     }
                 }
                 moveMenuInjected = true;
@@ -716,11 +746,40 @@ public class CapriPerchPadMod : ICapriMod
         foreach (ToolStripItem topItem in cms.Items)
         {
             ToolStripMenuItem mi = topItem as ToolStripMenuItem;
-            if (mi != null && mi.Text.Trim().Equals("Move", StringComparison.OrdinalIgnoreCase))
+            if (mi != null)
             {
-                moveMenuItem = mi;
-                mi.DropDownOpening -= OnMoveMenuOpening;
-                mi.DropDownOpening += OnMoveMenuOpening;
+                if (mi.Text.Trim().Equals("Move", StringComparison.OrdinalIgnoreCase))
+                {
+                    moveMenuItem = mi;
+                    mi.DropDownOpening -= OnMoveMenuOpening;
+                    mi.DropDownOpening += OnMoveMenuOpening;
+                }
+                else if (mi.Text.Trim().IndexOf("Hide", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    hideMenuItem = mi;
+                    mi.Click -= OnHideMenuClicked;
+                    mi.Click += OnHideMenuClicked;
+                }
+            }
+        }
+    }
+
+    private void OnHideMenuClicked(object sender, EventArgs e)
+    {
+        if (onPad && hideGlitchTicks == 0)
+        {
+            hidingViaMenu = true;
+            if (pad != null && !pad.IsDisposed && pad.Visible)
+            {
+                glitchBasePos = pad.Location;
+                hideGlitchTicks = 10;
+                pad.SetGlitch(hideGlitchTicks);
+                UpdateHologramMirror();
+            }
+            else
+            {
+                resumePadOnReturn = true;
+                ClosePadInstantly();
             }
         }
     }
@@ -766,6 +825,7 @@ public class CapriPerchPadMod : ICapriMod
     private void OnHerDragged()
     {
         resumePadOnReturn = false;
+        hidingViaMenu = false;
         if (onPad && pad != null && pad.Visible)
         {
             ClosePadInstantly();
@@ -775,6 +835,7 @@ public class CapriPerchPadMod : ICapriMod
     private void OnHerDropped(Point hip)
     {
         resumePadOnReturn = false;
+        hidingViaMenu = false;
         if (autoPerch && !IsOnTaskbar(hip) && currentVelocity < 850)
         {
             if (!onPad) SpawnPadAtCurrentPos();
@@ -785,13 +846,19 @@ public class CapriPerchPadMod : ICapriMod
     private void ClosePadInstantly()
     {
         onPad = false;
+        hideGlitchTicks = 0;
         RestoreHologram();
-        if (pad != null && pad.Visible) pad.Hide();
+        if (pad != null && !pad.IsDisposed)
+        {
+            pad.SetGlitch(0);
+            if (pad.Visible) pad.Hide();
+        }
     }
 
     public void ClosePadAndStand()
     {
         resumePadOnReturn = false;
+        hidingViaMenu = false;
         ClosePadInstantly();
         string anim = (capri.Her.Animation ?? "").ToLowerInvariant();
         if (anim.Contains("perch") || anim.Contains("sleep") || anim.Contains("sit"))
@@ -808,6 +875,7 @@ public class CapriPerchPadMod : ICapriMod
         if (!autoPerch)
         {
             resumePadOnReturn = false;
+            hidingViaMenu = false;
             ClosePadInstantly();
         }
     }
@@ -960,17 +1028,57 @@ public class CapriPerchPadMod : ICapriMod
 
         if (capri.Her.Dragging) return;
 
+        bool isHidden = companionWindow != null && !companionWindow.IsDisposed && !companionWindow.Visible;
+        if (isHidden) hidingViaMenu = false;
+
+        if (hideGlitchTicks > 0)
+        {
+            hideGlitchTicks--;
+            if (hideGlitchTicks == 0)
+            {
+                resumePadOnReturn = true;
+                ClosePadInstantly();
+                return;
+            }
+
+            if (pad != null && !pad.IsDisposed && pad.Visible)
+            {
+                int dirX = (hideGlitchTicks % 2 == 0) ? 1 : -1;
+                int jitterX = dirX * (2 + hideGlitchTicks);
+                pad.Location = new Point(glitchBasePos.X + jitterX, glitchBasePos.Y);
+                pad.SetGlitch(hideGlitchTicks);
+                UpdateHologramMirror();
+            }
+            return;
+        }
+
         string anim = (capri.Her.Animation ?? "").ToLowerInvariant();
         string st = (capri.Her.State ?? "").ToLowerInvariant();
         
         bool isSitting = anim.Contains("sit") || anim.Contains("perch") || anim.Contains("sleep") || st == "asleep";
 
-        if (onPad && (!isSitting || IsOnTaskPanel()))
+        if (onPad && isHidden)
+        {
+            if (pad != null && !pad.IsDisposed && pad.Visible)
+            {
+                glitchBasePos = pad.Location;
+                hideGlitchTicks = 10;
+                pad.SetGlitch(hideGlitchTicks);
+                UpdateHologramMirror();
+            }
+            else
+            {
+                resumePadOnReturn = true;
+                ClosePadInstantly();
+            }
+            return;
+        }
+        else if (onPad && (!isSitting || IsOnTaskPanel()))
         {
             resumePadOnReturn = true;
             ClosePadInstantly();
         }
-        else if (!onPad && resumePadOnReturn && autoPerch && isSitting && !IsHangingOrRiding() && !IsOnTaskbar(currentHip) && !IsOnWindowOrPanel())
+        else if (!onPad && resumePadOnReturn && autoPerch && isSitting && !isHidden && !hidingViaMenu && !IsHangingOrRiding() && !IsOnTaskbar(currentHip) && !IsOnWindowOrPanel())
         {
             if (Math.Abs(currentHip.X - savedPadHip.X) <= 100 && Math.Abs(currentHip.Y - savedPadHip.Y) <= 100)
             {
@@ -1049,6 +1157,7 @@ public class CapriPerchPadMod : ICapriMod
         private int currentCapriSize = 200;
         private float[] bars = new float[26];
         private int tick = 0;
+        private int glitchPhase = 0;
         private bool closeHover = false;
         private bool controlsOnLeft = false;
         private Rectangle closeRect;
@@ -1095,6 +1204,15 @@ public class CapriPerchPadMod : ICapriMod
             if (controlsOnLeft != onLeft)
             {
                 controlsOnLeft = onLeft;
+                Invalidate();
+            }
+        }
+
+        public void SetGlitch(int phase)
+        {
+            if (glitchPhase != phase)
+            {
+                glitchPhase = phase;
                 Invalidate();
             }
         }
@@ -1345,6 +1463,27 @@ public class CapriPerchPadMod : ICapriMod
                 g.DrawLine(cornerPen, 0, cut, cut, 0);
                 g.DrawLine(cornerPen, w - cut, h, w, h - cut);
                 g.DrawLine(cornerPen, w, h - cut, w, h - cut - 8);
+            }
+
+            if (glitchPhase > 0)
+            {
+                int shift = (glitchPhase % 2 == 0) ? 2 : -2;
+                using (Pen cyanPen = new Pen(Color.FromArgb(130, 0, 240, 255), 1f))
+                using (Pen magPen = new Pen(Color.FromArgb(140, 255, 0, 80), 1f))
+                {
+                    g.DrawRectangle(cyanPen, Math.Max(0, 1 - shift), 1, w - 2, h - 2);
+                    g.DrawRectangle(magPen, Math.Max(0, 1 + shift), 1, w - 2, h - 2);
+                }
+
+                int sliceY1 = (glitchPhase * 11) % Math.Max(1, h - 4);
+                int sliceY2 = (glitchPhase * 19 + 5) % Math.Max(1, h - 4);
+
+                using (SolidBrush cyanBrush = new SolidBrush(Color.FromArgb(135, 0, 245, 255)))
+                using (SolidBrush magBrush = new SolidBrush(Color.FromArgb(145, 255, 0, 80)))
+                {
+                    g.FillRectangle(cyanBrush, 0, sliceY1, w, 2);
+                    g.FillRectangle(magBrush, (glitchPhase % 2 == 0) ? 6 : 0, sliceY2, w - 6, 3);
+                }
             }
         }
 
