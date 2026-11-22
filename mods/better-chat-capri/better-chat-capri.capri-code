@@ -60,6 +60,7 @@ public class VoiceFlow : ICapriMod
 
     ICapriHost capri;
     Form window, pill, button, box;
+    Control typer;
     FieldInfo pillUntil, pillCentre, pillScale, askingField, talkStateField, utteranceField, transcribingField, jobField, securityHeldField, securityHoldingField, jobAskingField;
     PropertyInfo chatting, securityHoldingProp, jobAskingProp;
     EventInfo securityHeldEvent;
@@ -67,7 +68,7 @@ public class VoiceFlow : ICapriMod
     volatile object securityHold;
     Hook watch, still;
     Stopwatch clock;
-    MethodInfo talkScale, present, plate, chimePlay, closeNameChat;
+    MethodInfo talkScale, present, plate, chimePlay, closeNameChat, waitAfterName;
     FieldInfo chimeSet, chimeOn;
     Type chimeEnum;
     Color cyan, red, ink, dim;
@@ -92,6 +93,7 @@ public class VoiceFlow : ICapriMod
     bool cancelled;
     double lastSpeechAt;
     double lastActiveAt;
+    double lastTyperAt = -10;
 
     public void Start(ICapriHost host)
     {
@@ -120,9 +122,14 @@ public class VoiceFlow : ICapriMod
             FieldInfo boxField = window.GetType().GetField("box", Any);
             box = boxField == null ? null : boxField.GetValue(window) as Form;
 
+            FieldInfo typerField = window.GetType().GetField("typer", Any);
+            typer = typerField == null ? null : typerField.GetValue(window) as Control;
+
             askingField = window.GetType().GetField("asking", Any);
             talkStateField = window.GetType().GetField("talkState", Any);
-            closeNameChat = window.GetType().GetMethod("CloseNameChat", Any, null, Type.EmptyTypes, null);
+            closeNameChat = window.GetType().GetMethod("CloseAfterName", Any, null, Type.EmptyTypes, null)
+                ?? window.GetType().GetMethod("CloseNameChat", Any, null, Type.EmptyTypes, null);
+            waitAfterName = window.GetType().GetMethod("WaitAfterName", Any, null, Type.EmptyTypes, null);
             utteranceField = window.GetType().GetField("utterance", Any);
             transcribingField = window.GetType().GetField("transcribing", Any);
             jobField = window.GetType().GetField("job", Any);
@@ -438,12 +445,15 @@ public class VoiceFlow : ICapriMod
     {
         if (forwarding) return;
         if (message.Source == "mod") return;
-        if (IsSecurityAsking()) return;
-        if (message.Source == "type")
+        bool fromTyper = message.Source == "type" || (typer != null && !typer.IsDisposed && typer.Visible) || (Now() - lastTyperAt < 0.35);
+        if (fromTyper)
         {
+            ResetSession();
             cancelled = false;
+            PlayChime(ChimeShard, KindHeard);
             return;
         }
+        if (IsSecurityAsking()) return;
 
         string clean = (message.Text ?? "").Trim();
         if (IsNoise(clean))
@@ -522,6 +532,7 @@ public class VoiceFlow : ICapriMod
         forwarding = true;
         try { capri.Chat.Send(toSend); }
         finally { forwarding = false; }
+        try { if (waitAfterName != null) waitAfterName.Invoke(window, null); } catch (Exception) { }
     }
 
     static bool IsNoise(string text)
@@ -593,6 +604,9 @@ public class VoiceFlow : ICapriMod
     {
         SuppressNativeChimes();
 
+        if (typer != null && !typer.IsDisposed && typer.Visible)
+            lastTyperAt = Now();
+
         bool isChatting = pill != null && (bool)chatting.GetValue(pill, null);
         if (isChatting && !wasChatting)
         {
@@ -624,7 +638,6 @@ public class VoiceFlow : ICapriMod
         else if (glassPlayedInChat && Now() - lastActiveAt >= IdleResetSeconds)
         {
             glassPlayedInChat = false;
-            try { if (closeNameChat != null) closeNameChat.Invoke(window, null); } catch (Exception) { }
         }
 
         if (listeningSession && pendingText != null)
