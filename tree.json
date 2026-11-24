@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "commit": "a9a3b9bd55f80c155e54a658456626e371485f57",
+  "commit": "b0c9a295de742f210fab8184c62482d2c513a201",
   "tree": [
     {"path": "mods/MK001-dice-roller/MK001-dice-roller.capri-code", "type": "blob", "sha": "d2fc7cd88cfa7b85789e78741371f7191735bc9f", "size": 249409},
     {"path": "mods/MK001-dice-roller/README.md", "type": "blob", "sha": "aefd508a141369224a2388269f57346f63222ca9", "size": 1996},
@@ -22,7 +22,7 @@
     {"path": "mods/battery-drama/preview.png", "type": "blob", "sha": "ccb1895cf5ae064c95d7c01c48884035ed160c32", "size": 73866},
     {"path": "mods/better-chat-capri/README.md", "type": "blob", "sha": "d0a22997440c187b861c4a7cfafcd26151f36c9b", "size": 1715},
     {"path": "mods/better-chat-capri/better-chat-capri.capri-code", "type": "blob", "sha": "0e924068f6ebb641ff03e8d7b29561a58ccfc518", "size": 28456},
-    {"path": "mods/better-chat-capri/preview.png", "type": "blob", "sha": "03b119987ba4e34b5c9cc018ae7b1be45628ae40", "size": 1763592},
+    {"path": "mods/better-chat-capri/preview.png", "type": "blob", "sha": "87af31d9d5f05c7327ca02748bfecddc353959db", "size": 1128343},
     {"path": "mods/better-toolbar-capri/README.md", "type": "blob", "sha": "3a27130b3359fa81e164413c1b7612ed1d8dcf2c", "size": 1924},
     {"path": "mods/better-toolbar-capri/better-toolbar-capri.capri-code", "type": "blob", "sha": "d4c5506c2a9857521fb874ddd2c0da5b67f0a26d", "size": 60813},
     {"path": "mods/better-toolbar-capri/preview.png", "type": "blob", "sha": "2c86c93df942fd243695b449f19c802408d2a155", "size": 1728366},
